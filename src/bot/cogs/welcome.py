@@ -16,6 +16,7 @@ from discord.ext import commands
 from bot.config import config
 from bot.services.welcome_image import WelcomeImageGenerator
 from bot.services.audit import log_event
+from bot.services.discord_log import log_member_join
 from bot.database import get_db
 from bot.utils.helpers import utc_now_iso
 from bot.utils.permissions import require_owner
@@ -77,6 +78,8 @@ class WelcomeCog(commands.Cog):
             )
 
             self.generator.cleanup(image_path)
+
+            await log_member_join(self.bot, member)
 
         except Exception:
             logger.exception("Failed to process member join for %s", member.name)

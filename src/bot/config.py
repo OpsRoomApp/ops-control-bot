@@ -38,6 +38,9 @@ class Config:
 
     # -- Discord credentials --
     discord_token: str = field(default_factory=lambda: _env_str("DISCORD_TOKEN"))
+    client_id: int = field(
+        default_factory=lambda: _env_int("CLIENT_ID", 0)
+    )
 
     # -- Discord IDs --
     guild_id: int = field(default_factory=lambda: _env_int("GUILD_ID"))
@@ -61,6 +64,8 @@ class Config:
     )
 
     # -- External API keys --
+    # DEPRECATED: SimBrief OFP no longer requires an API key.
+    # Remove SIMBRIEF_API_KEY from your .env if present.
     simbrief_api_key: str | None = field(
         default_factory=lambda: _env_str("SIMBRIEF_API_KEY", None)
     )
@@ -96,6 +101,45 @@ class Config:
     )
     discord_announcement_channel: int = field(
         default_factory=lambda: _env_int("DISCORD_ANNOUNCEMENT_CHANNEL", 0)
+    )
+    log_channel_id: int = field(
+        default_factory=lambda: _env_int("LOG_CHANNEL_ID", 0)
+    )
+    bug_reports_channel_id: int = field(
+        default_factory=lambda: _env_int("BUG_REPORTS_CHANNEL_ID", 0)
+    )
+
+    # -- Ticket System --
+    support_category_id: int = field(
+        default_factory=lambda: _env_int("SUPPORT_CATEGORY_ID", 0)
+    )
+    support_dispatch_role_id: int = field(
+        default_factory=lambda: _env_int("SUPPORT_DISPATCH_ROLE_ID", 0)
+    )
+    moderator_role_id: int = field(
+        default_factory=lambda: _env_int("MODERATOR_ROLE_ID", 0)
+    )
+    ops_control_role_id: int = field(
+        default_factory=lambda: _env_int("OPS_CONTROL_ROLE_ID", 0)
+    )
+
+    # -- Beta Tester Program --
+    beta_coordinator_role_id: int = field(
+        default_factory=lambda: _env_int("BETA_COORDINATOR_ROLE_ID", 0)
+    )
+    verified_tester_role_id: int = field(
+        default_factory=lambda: _env_int("VERIFIED_TESTER_ROLE_ID", 0)
+    )
+    public_beta_role_id: int = field(
+        default_factory=lambda: _env_int("PUBLIC_BETA_ROLE_ID", 0)
+    )
+
+    # -- SimBrief defaults (used for route generation links) --
+    simbrief_user_id: str | None = field(
+        default_factory=lambda: _env_str("SIMBRIEF_USER_ID", None)
+    )
+    simbrief_static_id: str | None = field(
+        default_factory=lambda: _env_str("SIMBRIEF_STATIC_ID", None)
     )
 
     # -- Future PostgreSQL --

@@ -18,11 +18,14 @@ services:
       - ./data:/app/data
       - ./logs:/app/logs
       # Mount assets so generated images persist
+      # Main assets are read-only to protect template files
       - ./assets:/app/assets:ro
+      # Generated images need write access
       - ./assets/generated:/app/assets/generated
     environment:
       - DATABASE_PATH=/app/data/ops-control.db
       - LOG_PATH=/app/logs/ops-control.log
+      - ASSETS_DIR=/app/assets
       - TZ=${TIMEZONE:-UTC}
 
   # -----------------------------------------------

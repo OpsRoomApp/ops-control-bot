@@ -1,7 +1,8 @@
 """
 OPS CONTROL - Announce Cog
 
-/announce -- [Admin] Send formatted announcements.
+/announce -- [Admin] Send formatted announcements to the configured
+announcement channel.
 """
 
 from __future__ import annotations
@@ -12,10 +13,12 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from bot.config import config
 from bot.database import get_db
 from bot.utils.helpers import utc_now_iso
 from bot.utils.permissions import require_owner_or_admin
 from bot.services.audit import log_event
+from bot.services.discord_log import log_announcement
 
 logger = logging.getLogger("ops_control.cogs.announce")
 
@@ -28,7 +31,7 @@ class AnnounceCog(commands.Cog):
 
     @app_commands.command(
         name="announce",
-        description="Send a formatted announcement to the current channel.",
+        description="Send a formatted announcement to the OPS ROOM announcement channel.",
     )
     @app_commands.describe(
         title="Announcement title",
@@ -44,11 +47,27 @@ class AnnounceCog(commands.Cog):
         image: str | None = None,
         color: str = "#3498db",
     ) -> None:
-        """Send a rich announcement to the current channel (owner/admin only)."""
+        """Send a rich announcement (owner/admin only)."""
         if not await require_owner_or_admin(interaction):
             return
 
         await interaction.response.defer(ephemeral=True)
+
+        target_channel_id = config.discord_announcement_channel
+        if not target_channel_id:
+            await interaction.followup.send(
+                "DISCORD_ANNOUNCEMENT_CHANNEL is not configured. Set it in .env.",
+                ephemeral=True,
+            )
+            return
+
+        target_channel = interaction.guild.get_channel(target_channel_id) if interaction.guild else None
+        if target_channel is None or not isinstance(target_channel, discord.TextChannel):
+            await interaction.followup.send(
+                f"Announcement channel (ID {target_channel_id}) not found or is not a text channel.",
+                ephemeral=True,
+            )
+            return
 
         try:
             try:
@@ -71,7 +90,7 @@ class AnnounceCog(commands.Cog):
 
             embed.set_footer(text="OPS ROOM Operations")
 
-            msg = await interaction.channel.send(embed=embed)  # type: ignore[union-attr]
+            msg = await target_channel.send(embed=embed)
 
             db = await get_db()
             await db.execute(
@@ -79,7 +98,7 @@ class AnnounceCog(commands.Cog):
                 INSERT INTO announcements (title, content, image_url, created_by, created_by_name, created_at, channel_id, message_id)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (title, content, image, interaction.user.id, interaction.user.display_name, utc_now_iso(), interaction.channel_id, msg.id),
+                (title, content, image, interaction.user.id, interaction.user.display_name, utc_now_iso(), target_channel_id, msg.id),
             )
             await db.commit()
 
@@ -88,15 +107,24 @@ class AnnounceCog(commands.Cog):
                 user_id=interaction.user.id,
                 username=interaction.user.display_name,
                 guild_id=interaction.guild_id,  # type: ignore[arg-type]
-                channel_id=interaction.channel_id,
+                channel_id=target_channel_id,
                 detail=f"Announcement sent: {title}",
             )
 
+            # Discord log channel notification
+            if isinstance(interaction.user, discord.Member):
+                await log_announcement(
+                    self.bot,
+                    interaction.user,
+                    title,
+                    target_channel.name,
+                )
+
             await interaction.followup.send(
-                "Announcement sent.",
+                f"Announcement sent to {target_channel.mention}.",
                 ephemeral=True,
             )
-            logger.info("Announcement sent by %s in channel %s", interaction.user.name, interaction.channel_id)
+            logger.info("Announcement sent by %s to channel %s", interaction.user.name, target_channel_id)
 
         except Exception as e:
             logger.exception("Failed to send announcement")

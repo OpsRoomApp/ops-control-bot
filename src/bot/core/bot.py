@@ -51,7 +51,7 @@ class OpsControlBot(commands.Bot):
 
     async def setup_hook(self) -> None:
         """Called once before the bot connects to the gateway."""
-        logger.info("━━━ OPS CONTROL starting ━━━")
+        logger.info("--- OPS CONTROL starting ---")
 
         # 1. Initialise database
         await self._init_database()
@@ -59,23 +59,42 @@ class OpsControlBot(commands.Bot):
         # 2. Load Cogs
         await self._load_cogs()
 
-        # 3. Sync slash commands to the target guild for instant registration
+        # 3. Register persistent views for ticket system
+        self._register_persistent_views()
+
+        # 4. Sync slash commands to the target guild for instant registration
         guild = discord.Object(id=config.guild_id)
         self.tree.copy_global_to(guild=guild)
         await self.tree.sync(guild=guild)
         logger.info("Slash commands synced to guild %s", config.guild_id)
 
-        logger.info("━━━ Setup complete ━━━")
+        logger.info("--- Setup complete ---")
 
     async def on_ready(self) -> None:
         """Fires after the bot has logged in and is ready."""
         logger.info("Connected to Discord as %s (ID: %s)", self.user, self.user.id)
         logger.info("Guild ID: %s | Owner ID: %s", config.guild_id, config.owner_user_id)
+
+        # Log startup to Discord log channel
+        try:
+            from bot.services.discord_log import log_startup
+            await log_startup(self)
+        except Exception:
+            logger.exception("Failed to send startup log")
+
         self._startup_complete.set()
 
     async def close(self) -> None:
         """Graceful shutdown — close DB and API connections, clean up."""
-        logger.info("Shutting down OPS CONTROL…")
+        logger.info("Shutting down OPS CONTROL...")
+
+        # Log shutdown to Discord
+        try:
+            from bot.services.discord_log import log_shutdown
+            await log_shutdown(self)
+        except Exception:
+            pass
+
         try:
             from bot.database import close_db
             await close_db()
@@ -113,6 +132,21 @@ class OpsControlBot(commands.Bot):
         from bot.core.loader import load_cogs
         await load_cogs(self)
 
+    def _register_persistent_views(self) -> None:
+        """Register persistent views so they survive bot restarts."""
+        try:
+            from bot.cogs.ticket_system import (
+                SupportPanelView,
+                TicketActionView,
+                EscalateToSupportView,
+            )
+            self.add_view(SupportPanelView())
+            self.add_view(TicketActionView())
+            self.add_view(EscalateToSupportView())
+            logger.info("Persistent views registered.")
+        except Exception:
+            logger.exception("Failed to register persistent views")
+
     # ------------------------------------------------------------------
     # Global error handler
     # ------------------------------------------------------------------
@@ -128,7 +162,7 @@ class OpsControlBot(commands.Bot):
     async def on_error(self, event_method: str, /, *args: Any, **kwargs: Any) -> None:
         """Catch unhandled event-loop errors (e.g. on_member_join)."""
         logger.exception(
-            "Unhandled error in event '%s' — args=%s kwargs=%s",
+            "Unhandled error in event '%s' -- args=%s kwargs=%s",
             event_method,
             args,
             kwargs,

@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS simbrief_accounts (
     discord_id      INTEGER PRIMARY KEY,
     simbrief_user    TEXT NOT NULL,
     pilot_id        TEXT,
+    static_id       TEXT,
     created_at      TEXT NOT NULL,
     updated_at      TEXT
 );
@@ -112,12 +113,15 @@ CREATE TABLE IF NOT EXISTS bugs (
     aircraft        TEXT,
     module          TEXT    NOT NULL,
     description     TEXT    NOT NULL,
+    title           TEXT,
     steps           TEXT,
     expected        TEXT,
     actual          TEXT,
     priority        TEXT    NOT NULL DEFAULT 'normal',
     status          TEXT    NOT NULL DEFAULT 'open',
+    assigned_to     INTEGER,
     thread_id       INTEGER,
+    channel_id      INTEGER,
     created_at      TEXT    NOT NULL,
     updated_at      TEXT
 );
@@ -128,9 +132,13 @@ CREATE TABLE IF NOT EXISTS tickets (
     user_id         INTEGER NOT NULL,
     username        TEXT    NOT NULL,
     category        TEXT    NOT NULL,
+    priority        TEXT    NOT NULL DEFAULT 'Normal',
+    subject         TEXT,
     description     TEXT    NOT NULL,
     status          TEXT    NOT NULL DEFAULT 'open',
+    assigned_to     INTEGER,
     thread_id       INTEGER,
+    channel_id      INTEGER,
     created_at      TEXT    NOT NULL,
     updated_at      TEXT
 );
@@ -292,6 +300,14 @@ async def run_migrations() -> None:
         "ALTER TABLE events ADD COLUMN aircraft TEXT",
         "ALTER TABLE events ADD COLUMN route TEXT",
         "ALTER TABLE events ADD COLUMN version TEXT",
+        "ALTER TABLE simbrief_accounts ADD COLUMN static_id TEXT",
+        "ALTER TABLE tickets ADD COLUMN channel_id INTEGER",
+        "ALTER TABLE tickets ADD COLUMN subject TEXT",
+        "ALTER TABLE tickets ADD COLUMN assigned_to INTEGER",
+        "ALTER TABLE tickets ADD COLUMN priority TEXT NOT NULL DEFAULT 'Normal'",
+        "ALTER TABLE bugs ADD COLUMN channel_id INTEGER",
+        "ALTER TABLE bugs ADD COLUMN title TEXT",
+        "ALTER TABLE bugs ADD COLUMN assigned_to INTEGER",
     ]
     for stmt in migrations:
         try:

@@ -9,6 +9,7 @@ onto the welcome template at specified coordinates and font sizes.
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -18,9 +19,9 @@ from bot.config import config
 
 logger = logging.getLogger("ops_control.services.welcome_image")
 
-# Absolute paths to assets (relative to project root)
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
-_ASSETS = _PROJECT_ROOT / "assets"
+# Paths: use ASSETS_DIR env var in Docker (defaults to project-relative for local dev).
+# In Docker: ASSETS_DIR=/app/assets
+_ASSETS = Path(os.getenv("ASSETS_DIR", str(Path(__file__).resolve().parents[3] / "assets")))
 
 TEMPLATE_PATH = _ASSETS / "welcome.png"
 FONT_REGULAR = _ASSETS / "fonts" / "Sanchez-Regular.ttf"
@@ -59,6 +60,9 @@ class WelcomeImageGenerator:
             raise FileNotFoundError(f"Welcome template not found: {TEMPLATE_PATH}")
         if not FONT_REGULAR.exists():
             raise FileNotFoundError(f"Font not found: {FONT_REGULAR}")
+
+        logger.info("Assets directory: %s", _ASSETS)
+        logger.info("Generated images directory: %s", OUTPUT_DIR)
 
     def generate(self, name: str) -> Path:
         """

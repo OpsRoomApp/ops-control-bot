@@ -92,9 +92,9 @@ class LogbookCog(commands.Cog):
         aircraft: str,
         departure: str,
         arrival: str,
-        duration: float = 0,
-        landing_rate: float = 0,
-        score: float = 0,
+        duration: float = 0.0,
+        landing_rate: float = 0.0,
+        score: float = 0.0,
     ) -> None:
         """Manually log a flight (owner only)."""
         from bot.utils.permissions import require_owner

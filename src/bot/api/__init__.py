@@ -160,21 +160,28 @@ async def fetch_opensky_states(icao24: str | None = None) -> list[dict[str, Any]
 SIMBRIEF_API_URL = "https://www.simbrief.com/api/xml.fetcher.php"
 
 
-async def fetch_simbrief_flightplan(username: str | None = None) -> dict[str, Any] | None:
-    """Fetch a SimBrief flight plan. Returns None if not found."""
-    from bot.config import config
+async def fetch_simbrief_flightplan(username: str | None = None, static_id: str | None = None) -> dict[str, Any] | None:
+    """Fetch a SimBrief flight plan via the public XML fetcher API.
 
+    No API key is required — the public XML fetcher endpoint works
+    with just the SimBrief username (userid) and optional static_id.
+
+    Args:
+        username: SimBrief username / pilot ID.
+        static_id: Optional static ID for persistent OFP links.
+
+    Returns:
+        Parsed flight plan dict, or None if no plan found.
+    """
     params: dict[str, str] = {"json": "1"}
     if username:
-        params["username"] = username
-
-    headers: dict[str, str] = {}
-    if config.simbrief_api_key:
-        headers["X-API-Key"] = config.simbrief_api_key
+        params["userid"] = username
+    if static_id:
+        params["static_id"] = static_id
 
     try:
         session = await _get_session()
-        async with session.get(SIMBRIEF_API_URL, params=params, headers=headers) as resp:
+        async with session.get(SIMBRIEF_API_URL, params=params) as resp:
             resp.raise_for_status()
             data: dict[str, Any] = await resp.json()
 

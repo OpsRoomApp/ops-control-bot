@@ -29,12 +29,16 @@ _REQUIRED_COGS: list[str] = [
     "bot.cogs.releases",
     "bot.cogs.vatsim",
     "bot.cogs.ops_dashboard",
-    "bot.cogs.bugs",
-    "bot.cogs.support",
     "bot.cogs.profile",
     "bot.cogs.preferences",
     "bot.cogs.logbook",
     "bot.cogs.admin",
+    "bot.cogs.ticket_system",
+    "bot.cogs.purge",
+    "bot.cogs.help_cog",
+    "bot.cogs.betatester",
+    "bot.cogs.roles_cog",
+    "bot.cogs.randomroute",
 ]
 
 
