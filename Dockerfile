@@ -10,6 +10,7 @@ LABEL org.opencontainers.image.version="1.0.0"
 # Prevent .pyc files and enable unbuffered output
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app/src
 
 WORKDIR /app
 
