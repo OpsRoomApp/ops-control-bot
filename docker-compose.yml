@@ -1,0 +1,57 @@
+# OPS CONTROL - Docker Compose
+# Production deployment with future service readiness.
+#
+# Run:  docker compose up -d
+# Stop: docker compose down
+
+version: "3.9"
+
+services:
+  bot:
+    build: .
+    container_name: ops-control-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # Persist database and logs outside the container
+      - ./data:/app/data
+      - ./logs:/app/logs
+      # Mount assets so generated images persist
+      - ./assets:/app/assets:ro
+      - ./assets/generated:/app/assets/generated
+    environment:
+      - DATABASE_PATH=/app/data/ops-control.db
+      - LOG_PATH=/app/logs/ops-control.log
+      - TZ=${TIMEZONE:-UTC}
+
+  # -----------------------------------------------
+  # Future: PostgreSQL
+  # Uncomment when ready to migrate from SQLite.
+  # -----------------------------------------------
+  # postgres:
+  #   image: postgres:16-alpine
+  #   container_name: ops-control-db
+  #   restart: unless-stopped
+  #   environment:
+  #     POSTGRES_USER: opscontrol
+  #     POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+  #     POSTGRES_DB: opscontrol
+  #   volumes:
+  #     - pgdata:/var/lib/postgresql/data
+  #   ports:
+  #     - "127.0.0.1:5432:5432"
+
+  # -----------------------------------------------
+  # Future: Redis (for caching / rate limiting)
+  # -----------------------------------------------
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: ops-control-redis
+  #   restart: unless-stopped
+  #   volumes:
+  #     - redis_data:/data
+
+# volumes:
+#   pgdata:
+#   redis_data:

@@ -1,0 +1,23 @@
+# OPS CONTROL - Discord Operations Bot
+# Python 3.12+
+
+# Discord
+discord.py>=2.4.0
+
+# Image Generation
+Pillow>=10.0.0
+
+# Configuration
+python-dotenv>=1.0.0
+
+# Database (SQLite initially, PostgreSQL-ready architecture)
+aiosqlite>=0.20.0
+
+# HTTP Client (for external API integrations)
+aiohttp>=3.9.0
+
+# Timezone handling
+pytz>=2024.1
+
+# Async file operations
+aiofiles>=24.0.0
