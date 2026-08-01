@@ -30,12 +30,12 @@ async def require_owner(interaction: discord.Interaction) -> bool:
     # Only send message if we haven't already responded
     if not interaction.response.is_done():
         await interaction.response.send_message(
-            "⛔ This command is restricted to the bot owner.",
+            "This command is restricted to the bot owner.",
             ephemeral=True,
         )
     else:
         await interaction.followup.send(
-            "⛔ This command is restricted to the bot owner.",
+            "This command is restricted to the bot owner.",
             ephemeral=True,
         )
     return False
@@ -64,12 +64,12 @@ async def require_owner_or_admin(interaction: discord.Interaction) -> bool:
 
     if not interaction.response.is_done():
         await interaction.response.send_message(
-            "⛔ You need Administrator permissions or must be the bot owner.",
+            "You need Administrator permissions or must be the bot owner.",
             ephemeral=True,
         )
     else:
         await interaction.followup.send(
-            "⛔ You need Administrator permissions or must be the bot owner.",
+            "You need Administrator permissions or must be the bot owner.",
             ephemeral=True,
         )
     return False

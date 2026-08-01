@@ -35,7 +35,9 @@ Built with Python 3.12+, discord.py 2.x, Pillow, and aiosqlite. Designed for Doc
 | `/ofp` | Fetch latest SimBrief Operational Flight Plan |
 | `/link-simbrief USERNAME` | Link Discord to SimBrief account |
 | `/latest` | Latest OPS ROOM release info |
+| `/changelog` | Recent OPS ROOM releases |
 | `/roadmap` | OPS ROOM development roadmap |
+| `/randomroute` | Generate a realistic random flight (Where2Fly primary, local fallback) |
 
 ### User
 
@@ -45,13 +47,21 @@ Built with Python 3.12+, discord.py 2.x, Pillow, and aiosqlite. Designed for Doc
 | `/profile-set` | Set simulator, network, OPS ROOM version |
 | `/logbook` | View your flight logs |
 | `/log-flight` | [Owner] Manually log a flight |
+| `/weather metar ICAO` | METAR via NOAA Aviation Weather Center |
+| `/weather taf ICAO` | TAF forecast via NOAA |
+| `/notam ICAO` | Active NOTAMs for an airport |
+| `/sigmet` | Active SIGMET weather warnings |
+| `/ops-status` | VATSIM network status by region |
+| `/airport-status ICAO` | Traffic, controllers, METAR/TAF/NOTAM for an airport |
+| `/airport-add` / `/airport-remove` | Save departure/arrival/alternate airports |
+| `/preferences` | Notification preferences (releases, weather, VATSIM events) |
 
 ### Support
 
 | Command | Description |
 |---------|-------------|
-| `/bug` | Report a bug (modal with forum thread) |
-| `/support` | Create a support ticket (forum thread) |
+| `/bug` | Report a bug (modal, posts to bug reports channel, mentions Owner + Developer) |
+| `/support` | Open the support panel (persistent panel with ticket buttons) |
 
 ### Admin
 
@@ -60,6 +70,10 @@ Built with Python 3.12+, discord.py 2.x, Pillow, and aiosqlite. Designed for Doc
 | `/admin-health` | [Owner] Detailed bot health |
 | `/admin-logs` | [Owner] View audit logs |
 | `/admin-db-stats` | [Owner] Database statistics |
+| `/help` | Command list grouped by permission level |
+| `/purge N` | [Moderator+] Delete N messages |
+| `/betatester add/remove` | [Beta Coordinator+] Manage beta tester roles |
+| `/roles` | Role selection (simulator, network, tester) |
 
 ---
 
@@ -103,11 +117,28 @@ cd src && python -m bot.main
 | `DATABASE_PATH` | No | `data/ops-control.db` | SQLite database path |
 | `LOG_PATH` | No | `logs/ops-control.log` | Log file path |
 | `LOG_LEVEL` | No | `INFO` | Log level (DEBUG, INFO, WARNING, ERROR) |
-| `SIMBRIEF_API_KEY` | No | — | SimBrief API key for `/ofp` and `/link-simbrief` |
+| `SIMBRIEF_USER_ID` | No | — | SimBrief pilot ID (default for `/ofp`) |
+| `SIMBRIEF_STATIC_ID` | No | — | SimBrief static ID (default; user links take priority) |
 | `GITHUB_REPO` | No | `OpsRoomApp/ops-room-releases` | GitHub repo for `/latest` |
 | `OPSROOM_RELEASES_API` | No | `https://opsroom.live/api/update.json` | Release manifest URL |
 | `BUG_FORUM_CHANNEL_ID` | No | — | Forum channel for bug reports (optional) |
 | `SUPPORT_FORUM_CHANNEL_ID` | No | — | Forum channel for support tickets (optional) |
+| `DISCORD_ANNOUNCEMENT_CHANNEL` | No | — | Channel used by `/announce` and admin-panel announcements |
+| `LOG_CHANNEL_ID` | No | — | Discord channel for operation log embeds |
+| `BUG_REPORTS_CHANNEL_ID` | No | — | Channel for bug reports |
+| `SUPPORT_CATEGORY_ID` | No | — | Category for private ticket channels |
+| `TICKET_TRANSCRIPT_CHANNEL_ID` | No | — | Channel for ticket transcripts |
+| `MODERATOR_ROLE_ID` | No | — | Moderator role for `/purge` |
+| `SUPPORT_DISPATCH_ROLE_ID` | No | — | Support Dispatch role (ticket mentions) |
+| `DEVELOPER_ROLE_ID` | No | — | Developer role (bug report mentions) |
+| `BETA_COORDINATOR_ROLE_ID` | No | — | Beta Coordinator role for `/betatester` |
+| `VERIFIED_TESTER_ROLE_ID` / `PUBLIC_BETA_ROLE_ID` | No | — | Beta tester roles |
+| `WHERE2FLY_ENABLED` | No | `true` | Enable Where2Fly route provider |
+| `WHERE2FLY_API_TOKEN` | No | — | Where2Fly Bearer token (optional; local fallback used when empty) |
+| `WHERE2FLY_API_BASE_URL` | No | `https://where2fly.today/` | Where2Fly API base URL |
+| `WHERE2FLY_TIMEOUT_SECONDS` | No | `15` | Where2Fly request timeout |
+| `PENDING_ACTION_POLL_SECONDS` | No | `15` | Pending-actions dispatcher poll interval |
+| `PENDING_ACTION_MAX_ATTEMPTS` | No | `3` | Max dispatcher attempts per action |
 
 ---
 
@@ -192,7 +223,7 @@ ops-control-bot/
 |---------|-----------|-------------|-------|
 | **VATSIM** | No | — | Public API |
 | **OpenSky** | No | — | Anonymous tier, ~10 req/min |
-| **SimBrief** | No | `SIMBRIEF_API_KEY` in `.env` | For `/ofp` and `/link-simbrief` |
+| **SimBrief** | No | — | Public XML fetcher (`api/xml.fetcher.php?userid=`) — no key required |
 | **aviationweather.gov** | No | — | Free public METAR API |
 | **GitHub Releases** | No | — | Public API for `/latest` |
 
@@ -227,12 +258,14 @@ Schema uses standard SQL. To migrate:
 ## Known Limitations
 
 - No avatar on welcome images — per specification
-- SimBrief requires paid API key for authenticated access
+- Where2Fly API token optional: bot runs in local-fallback route mode until `WHERE2FLY_API_TOKEN` is provided
+- Where2Fly results are suggestions only — never presented as confirmed scheduled services
 - OpenSky anonymous tier rate-limited to ~10 req/min
 - Single-guild deployment per spec
 - Windows: SIGTERM not supported (use Ctrl+C)
 - /flight vatsim (legacy) duplicates /vatsim-status (newer)
 - GitHub release service ready but not yet wired to auto-announce
+- ADS-B real-world schedules reserved for the future OPS ROOM Dispatch Module
 
 ---
 

@@ -130,13 +130,7 @@ class FlightOpsCog(commands.Cog):
     async def flight_simbrief(
         self, interaction: discord.Interaction, username: str | None = None,
     ) -> None:
-        """Fetch a SimBrief flight plan."""
-        if not config.simbrief_api_key:
-            await interaction.response.send_message(
-                "SimBrief API key is not configured.",
-                ephemeral=True,
-            )
-            return
+        """Fetch a SimBrief flight plan (public XML fetcher, no API key)."""
         if not username:
             await interaction.response.send_message(
                 "Provide a SimBrief username.",
@@ -201,14 +195,11 @@ class FlightOpsCog(commands.Cog):
         except Exception as e:
             checks.append(("OpenSky", False, str(e)))
 
-        if config.simbrief_api_key:
-            try:
-                result = await fetch_simbrief_flightplan()
-                checks.append(("SimBrief", True, "Online" if result is not None else "No data"))
-            except Exception as e:
-                checks.append(("SimBrief", False, str(e)))
-        else:
-            checks.append(("SimBrief", False, "API key not configured"))
+        try:
+            result = await fetch_simbrief_flightplan()
+            checks.append(("SimBrief", True, "Online" if result is not None else "No data"))
+        except Exception as e:
+            checks.append(("SimBrief", False, str(e)))
 
         lines: list[str] = []
         for name, ok, detail in checks:

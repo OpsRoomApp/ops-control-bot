@@ -1,15 +1,11 @@
 """
-OPS CONTROL - Random Route Generator Service
+OPS CONTROL - Random Route Generator Service (DEPRECATED)
 
-Generates realistic random aviation routes using:
-- src/db/airports.csv (ICAO, type, name, lat, lon, country)
-- src/db/airlines.csv (Airline, IATA, ICAO, Callsign, Country, Active)
+This module has been superseded by the provider-based route architecture in
+bot/services/routes/ (Where2Fly primary + improved local fallback).
 
-Logic:
-- Aircraft category determines cruise speed and distance.
-- distance = speed * flight_time * 0.75 (accounts for climb/descent/routing).
-- Origin/destination airports matched against the airport database.
-- Active airlines (Active=Y) preferred for flight number generation.
+It is kept for backwards compatibility and is no longer imported by the
+/randomroute cog. Prefer bot.services.routes.generate_route().
 """
 
 from __future__ import annotations
@@ -339,22 +335,19 @@ def build_simbrief_url(
     username: str | None = None,
     static_id: str | None = None,
 ) -> str:
-    """Build a SimBrief 'new flight plan' link.
+    """Build a SimBrief Options URL (prefilled flight plan form).
 
-    If a SimBrief username is available it is included so the OFP can
-    be generated for the user's account (public API, no key required).
+    Uses the current dispatch.simbrief.com/options/custom endpoint.
+    `username` is accepted for API compatibility only — the Options URL
+    does not document a userid parameter and it is never sent.
     """
-    import urllib.parse
+    from bot.services.simbrief_url import build_simbrief_options_url
 
-    params = {
-        "aircraft": aircraft_code,
-        "origin": origin,
-        "dest": dest,
-    }
-    if username:
-        params["userid"] = username
-    if static_id:
-        params["static_id"] = static_id
-
-    query = urllib.parse.urlencode(params)
-    return f"https://www.simbrief.com/ofp/flightplans/new?{query}"
+    return build_simbrief_options_url(
+        airline="OPS",
+        fltnum="001",
+        orig=origin,
+        dest=dest,
+        basetype=aircraft_code,
+        static_id=static_id,
+    )

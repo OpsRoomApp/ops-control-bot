@@ -4,10 +4,13 @@ OPS CONTROL - Ticket System
 Complete Discord ticket system:
 - Persistent support panel with buttons
 - Modal-based ticket creation (support tickets and bug reports)
-- Private ticket channels with role-based permissions
-- Claim Ticket + Close Ticket buttons
+- Private ticket channels named ticket-{number}-{username}
+- Role-based permissions (creator, Support Dispatch, Moderator, OPS CONTROL, bot)
+- Support Dispatch role mention on ticket creation (AllowedMentions restricted)
+- Owner + Developer role mentions on bug reports (AllowedMentions restricted)
+- Claim Ticket + Close Ticket buttons (staff only)
+- Transcript workflow on close (HTML archive + DM to creator)
 - Database records for all tickets and bugs
-- Bug report notifications to the bug reports channel
 """
 
 from __future__ import annotations
@@ -28,6 +31,11 @@ from bot.services.discord_log import (
     log_ticket_closed,
     log_bug_submitted,
 )
+from bot.services.ticket_transcript import (
+    _disable_ticket_controls,
+    close_ticket_with_transcript,
+    ticket_channel_name,
+)
 
 logger = logging.getLogger("ops_control.cogs.tickets")
 
@@ -35,6 +43,7 @@ logger = logging.getLogger("ops_control.cogs.tickets")
 SUPPORT_DISPATCH = config.support_dispatch_role_id
 MODERATOR_ROLE = config.moderator_role_id
 OPS_CONTROL_ROLE = config.ops_control_role_id
+DEVELOPER_ROLE = config.developer_role_id
 BUG_REPORTS_CHANNEL = config.bug_reports_channel_id
 
 # Category ID for ticket channels
@@ -110,11 +119,17 @@ class SupportTicketModal(discord.ui.Modal, title="Create Support Ticket"):
         priority = (self.priority.value.strip() or "Normal")[:20]
         ticket_num = _get_next_ticket_number()
 
-        # Create private ticket channel
+        member = interaction.user if isinstance(interaction.user, discord.Member) else None
+        username = (
+            member.display_name if member and member.display_name.strip() else
+            interaction.user.name or str(interaction.user.id)
+        )
+
+        # Create private ticket channel (username-based naming)
         channel = await _create_ticket_channel(
             interaction,
             ticket_num,
-            subject,
+            username,
             "support",
         )
 
@@ -126,27 +141,39 @@ class SupportTicketModal(discord.ui.Modal, title="Create Support Ticket"):
                 color=0x8B5CF6,
                 timestamp=discord.utils.utcnow(),
             )
-            embed.add_field(name="Created by", value=f"{interaction.user.mention} ({interaction.user.display_name})", inline=False)
+            embed.add_field(
+                name="Created by",
+                value=f"{interaction.user.mention} ({username})",
+                inline=False,
+            )
             embed.add_field(name="Priority", value=priority, inline=True)
             embed.add_field(name="Subject", value=subject, inline=False)
             embed.add_field(name="Description", value=description[:1024], inline=False)
             embed.set_footer(text="A staff member will assist you shortly.")
 
             view = TicketActionView(ticket_num)
-            await channel.send(
-                content=f"{interaction.user.mention} Support Dispatch - please assist.",
-                embed=embed,
-                view=view,
+            # Mention the ticket creator + Support Dispatch role only.
+            # AllowedMentions requires Snowflake objects (discord.Object),
+            # not raw ints — discord.py reads `.id` off each entry.
+            allowed = discord.AllowedMentions(
+                users=[interaction.user],
+                roles=[discord.Object(SUPPORT_DISPATCH)] if SUPPORT_DISPATCH else [],
+                everyone=False,
+                replied_user=False,
             )
+            content = f"{interaction.user.mention} <@&{SUPPORT_DISPATCH}>"
+            if not SUPPORT_DISPATCH:
+                content = interaction.user.mention
+            await channel.send(content=content, embed=embed, view=view, allowed_mentions=allowed)
 
         # Save to database
         db = await get_db()
-        cursor = await db.execute(
+        await db.execute(
             """
             INSERT INTO tickets (user_id, username, category, priority, description, subject, channel_id, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (interaction.user.id, interaction.user.display_name, "support", priority, description, subject, channel.id if channel else None, utc_now_iso()),
+            (interaction.user.id, username, "support", priority, description, subject, channel.id if channel else None, utc_now_iso()),
         )
         await db.commit()
 
@@ -158,16 +185,16 @@ class SupportTicketModal(discord.ui.Modal, title="Create Support Ticket"):
         await log_event(
             "ticket",
             user_id=interaction.user.id,
-            username=interaction.user.display_name,
+            username=username,
             guild_id=interaction.guild_id,  # type: ignore[arg-type]
             channel_id=channel.id if channel else None,
             detail=f"Support ticket #{ticket_num}: {subject} ({priority})",
         )
 
-        if isinstance(interaction.user, discord.Member):
+        if member:
             await log_ticket_created(
                 interaction.client,  # type: ignore[arg-type]
-                interaction.user,
+                member,
                 ticket_num,
                 subject,
                 channel_mention,
@@ -230,11 +257,17 @@ class BugReportModal(discord.ui.Modal, title="Report a Bug"):
 
         ticket_num = _get_next_ticket_number()
 
-        # Create private ticket channel
+        member = interaction.user if isinstance(interaction.user, discord.Member) else None
+        username = (
+            member.display_name if member and member.display_name.strip() else
+            interaction.user.name or str(interaction.user.id)
+        )
+
+        # Create private ticket channel (username-based naming)
         channel = await _create_ticket_channel(
             interaction,
             ticket_num,
-            title,
+            username,
             "bug",
         )
 
@@ -246,7 +279,7 @@ class BugReportModal(discord.ui.Modal, title="Report a Bug"):
                 color=0xF59E0B,
                 timestamp=discord.utils.utcnow(),
             )
-            embed.add_field(name="Reporter", value=f"{interaction.user.mention} ({interaction.user.display_name})", inline=False)
+            embed.add_field(name="Reporter", value=f"{interaction.user.mention} ({username})", inline=False)
             embed.add_field(name="Version", value=version, inline=True)
             embed.add_field(name="Module", value=module, inline=True)
             embed.add_field(name="Title", value=title, inline=False)
@@ -256,11 +289,16 @@ class BugReportModal(discord.ui.Modal, title="Report a Bug"):
             embed.set_footer(text="A staff member will review this report.")
 
             view = TicketActionView(ticket_num)
-            await channel.send(
-                content=f"{interaction.user.mention} Support Dispatch - bug report.",
-                embed=embed,
-                view=view,
+            allowed = discord.AllowedMentions(
+                users=[interaction.user],
+                roles=[SUPPORT_DISPATCH] if SUPPORT_DISPATCH else [],
+                everyone=False,
+                replied_user=False,
             )
+            content = f"{interaction.user.mention} <@&{SUPPORT_DISPATCH}>"
+            if not SUPPORT_DISPATCH:
+                content = interaction.user.mention
+            await channel.send(content=content, embed=embed, view=view, allowed_mentions=allowed)
 
         # Save to database
         db = await get_db()
@@ -269,12 +307,12 @@ class BugReportModal(discord.ui.Modal, title="Report a Bug"):
             INSERT INTO bugs (reporter_id, reporter_name, version, module, description, steps, title, channel_id, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (interaction.user.id, interaction.user.display_name, version, module, description, steps_text, title, channel.id if channel else None, utc_now_iso()),
+            (interaction.user.id, username, version, module, description, steps_text, title, channel.id if channel else None, utc_now_iso()),
         )
         await db.commit()
         bug_db_id = cursor.lastrowid
 
-        # Notify bug reports channel
+        # Notify bug reports channel: mention Owner + Developer role only.
         bug_channel_id = BUG_REPORTS_CHANNEL
         if bug_channel_id and interaction.guild:
             bug_ch = interaction.guild.get_channel(bug_channel_id)
@@ -285,16 +323,30 @@ class BugReportModal(discord.ui.Modal, title="Report a Bug"):
                     timestamp=discord.utils.utcnow(),
                 )
                 notify_embed.add_field(name="Reporter", value=interaction.user.mention, inline=True)
+                notify_embed.add_field(name="Bug ID", value=str(bug_db_id), inline=True)
                 notify_embed.add_field(name="Ticket", value=f"#{ticket_num}", inline=True)
                 notify_embed.add_field(name="Title", value=title, inline=False)
                 notify_embed.add_field(name="Description", value=description[:1024], inline=False)
                 notify_embed.add_field(name="Version", value=version, inline=True)
                 notify_embed.add_field(name="Module", value=module, inline=True)
                 notify_embed.set_footer(text=f"Bug ID: {bug_db_id}")
+                allowed = discord.AllowedMentions(
+                    users=[discord.Object(config.owner_user_id)] if config.owner_user_id else [],
+                    roles=[discord.Object(DEVELOPER_ROLE)] if DEVELOPER_ROLE else [],
+                    everyone=False,
+                    replied_user=False,
+                )
+                mentions = ""
+                if config.owner_user_id:
+                    mentions += f" <@{config.owner_user_id}>"
+                if DEVELOPER_ROLE:
+                    mentions += f" <@&{DEVELOPER_ROLE}>"
                 try:
                     await bug_ch.send(
+                        content=mentions.strip() or None,
                         embed=notify_embed,
                         view=EscalateToSupportView(ticket_num),
+                        allowed_mentions=allowed,
                     )
                 except Exception:
                     logger.exception("Failed to notify bug reports channel")
@@ -307,16 +359,16 @@ class BugReportModal(discord.ui.Modal, title="Report a Bug"):
         await log_event(
             "bug",
             user_id=interaction.user.id,
-            username=interaction.user.display_name,
+            username=username,
             guild_id=interaction.guild_id,  # type: ignore[arg-type]
             channel_id=channel.id if channel else None,
             detail=f"Bug #{ticket_num}: {title}",
         )
 
-        if isinstance(interaction.user, discord.Member):
+        if member:
             await log_bug_submitted(
                 interaction.client,  # type: ignore[arg-type]
-                interaction.user,
+                member,
                 ticket_num,
                 title,
                 channel_mention,
@@ -400,7 +452,7 @@ class TicketActionView(discord.ui.View):
 
     @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.danger, custom_id="ticket:close")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        """Close the ticket channel (staff only)."""
+        """Close the ticket channel with a full transcript workflow (staff only)."""
         if not isinstance(interaction.user, discord.Member):
             await interaction.response.defer(ephemeral=True)
             return
@@ -418,53 +470,134 @@ class TicketActionView(discord.ui.View):
         ch_id = interaction.channel_id
         db = await get_db()
         cursor = await db.execute(
-            "SELECT id, user_id, username, subject FROM tickets WHERE channel_id = ?",
+            "SELECT id, user_id, username, subject, priority, assigned_to, created_at FROM tickets WHERE channel_id = ?",
             (ch_id,),
         )
         ticket_row = await cursor.fetchone()
 
+        is_bug = False
         if not ticket_row:
             cursor = await db.execute(
-                "SELECT id, reporter_id AS user_id, reporter_name AS username, title AS subject FROM bugs WHERE channel_id = ?",
+                "SELECT id, reporter_id AS user_id, reporter_name AS username, title AS subject, priority, assigned_to, created_at FROM bugs WHERE channel_id = ?",
                 (ch_id,),
             )
             ticket_row = await cursor.fetchone()
+            is_bug = True
 
-        t_id: int = ticket_row["id"] if ticket_row else 0
-        t_subject = ticket_row["subject"] if ticket_row else "unknown"
-        t_creator = ticket_row["username"] if ticket_row else "unknown"
+        if not ticket_row:
+            await interaction.followup.send(
+                "Could not find this ticket in the database.",
+                ephemeral=True,
+            )
+            return
 
-        await db.execute(
-            "UPDATE tickets SET status = 'closed', updated_at = ? WHERE channel_id = ?",
-            (utc_now_iso(), ch_id),
+        t_id: int = ticket_row["id"]
+        t_subject = ticket_row["subject"] or "No subject"
+        t_creator_id: int = ticket_row["user_id"]
+        t_creator_name = ticket_row["username"] or "user"
+        t_priority = ticket_row["priority"] or "Normal"
+        t_assigned = ticket_row["assigned_to"]
+        t_created = ticket_row["created_at"] or ""
+
+        # Idempotency: duplicate close must be a no-op.
+        status_col = "bugs" if is_bug else "tickets"
+        cursor = await db.execute(
+            f"SELECT status FROM {status_col} WHERE id = ?", (t_id,)
         )
-        await db.execute(
-            "UPDATE bugs SET status = 'closed', updated_at = ? WHERE channel_id = ?",
-            (utc_now_iso(), ch_id),
-        )
-        await db.commit()
+        status_row = await cursor.fetchone()
+        if status_row and status_row["status"] == "closed":
+            await interaction.followup.send(
+                "This ticket is already closed.",
+                ephemeral=True,
+            )
+            return
 
+        # Lock ticket controls before processing.
+        channel = interaction.channel
+        if isinstance(channel, discord.TextChannel):
+            try:
+                await _disable_ticket_controls(channel)
+            except Exception:
+                logger.exception("Failed to lock ticket controls")
+
+        assigned_staff_name = None
+        if t_assigned:
+            member = interaction.guild.get_member(t_assigned) if interaction.guild else None
+            assigned_staff_name = member.display_name if member else str(t_assigned)
+
+        # Transcript workflow for support tickets.
+        if is_bug:
+            # Bug channels close without the full transcript workflow.
+            await db.execute(
+                "UPDATE bugs SET status = 'closed', updated_at = ? WHERE id = ?",
+                (utc_now_iso(), t_id),
+            )
+            await db.commit()
+            await log_event(
+                "ticket_closed",
+                user_id=interaction.user.id,
+                username=interaction.user.display_name,
+                guild_id=interaction.guild_id,
+                channel_id=ch_id,
+                detail=f"Bug #{t_id} closed: {t_subject}",
+            )
+            if interaction.user is not None and isinstance(interaction.user, discord.Member):
+                await log_ticket_closed(
+                    interaction.client,  # type: ignore[arg-type]
+                    interaction.user,
+                    t_id,
+                    t_creator_name,
+                )
+            try:
+                await channel.delete()  # type: ignore[union-attr]
+            except Exception:
+                logger.exception("Failed to delete bug channel")
+            return
+
+        transcript_result = await close_ticket_with_transcript(
+            interaction.client,  # type: ignore[arg-type]
+            channel,  # type: ignore[arg-type]
+            interaction.user,
+            ticket_id=t_id,
+            creator_user_id=t_creator_id,
+            creator_name=t_creator_name,
+            subject=t_subject,
+            priority=t_priority,
+            assigned_staff=assigned_staff_name,
+            opened_at=t_created,
+            ticket_number=self._ticket_num or t_id,
+        )
+
+        if transcript_result["transcript_status"] == "failed":
+            # Archive unavailable: preserve channel, allow retry.
+            await interaction.followup.send(
+                "The ticket could not be archived, so it has been preserved. "
+                "Please retry closing once the archive channel is available.",
+                ephemeral=True,
+            )
+            return
+
+        # Transcript delivered: log and delete the channel.
         await log_event(
             "ticket_closed",
             user_id=interaction.user.id,
             username=interaction.user.display_name,
             guild_id=interaction.guild_id,
             channel_id=ch_id,
-            detail=f"Ticket #{t_id} closed: {t_subject}",
+            detail=f"Ticket #{t_id} closed with transcript: {t_subject}",
         )
-
         if isinstance(interaction.user, discord.Member):
             await log_ticket_closed(
                 interaction.client,  # type: ignore[arg-type]
                 interaction.user,
                 t_id,
-                t_creator,
+                t_creator_name,
             )
-
         try:
-            await interaction.channel.delete()  # type: ignore[union-attr]
+            await channel.delete()  # type: ignore[union-attr]
+            logger.info("Ticket channel deleted after transcript: %s", ch_id)
         except Exception:
-            logger.exception("Failed to delete ticket channel")
+            logger.exception("Failed to delete ticket channel after transcript")
 
 
 # ---------------------------------------------------------------------------
@@ -505,19 +638,19 @@ class SupportPanelView(discord.ui.View):
 async def _create_ticket_channel(
     interaction: discord.Interaction,
     ticket_num: int,
-    subject: str,
+    username: str,
     ticket_type: str,
 ) -> discord.TextChannel | None:
     """Create a private ticket channel with proper permissions.
 
-    Returns the created channel or None on failure.
+    Channel name: ticket-{number}-{username} (username-based, sanitized).
+    Permissions: creator + staff roles allowed; everyone else denied.
     """
     if not interaction.guild:
         return None
 
-    # Sanitize channel name
-    safe_subject = "".join(c for c in subject if c.isalnum() or c in " _-")[:30]
-    channel_name = f"ticket-{ticket_num}-{safe_subject.lower().replace(' ', '-')}"
+    fallback_id = interaction.user.id
+    channel_name = ticket_channel_name(ticket_num, username, fallback_id)
 
     category = None
     if TICKET_CATEGORY_ID:
@@ -544,7 +677,7 @@ async def _create_ticket_channel(
             name=channel_name,
             category=category,
             overwrites=overwrites,
-            reason=f"{ticket_type} ticket #{ticket_num} by {interaction.user.display_name}",
+            reason=f"{ticket_type} ticket #{ticket_num} by {username}",
         )
         logger.info("Created ticket channel: %s", channel.name)
         return channel

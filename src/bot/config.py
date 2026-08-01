@@ -29,7 +29,17 @@ def _env_int(key: str, default: object = _REQUIRED) -> int:
     raw = _env_str(key, str(default) if default is not _REQUIRED else None)
     if raw is None or raw == "None":
         raise EnvironmentError(f"Missing required environment variable: {key}")
-    return int(raw)
+    try:
+        return int(raw)
+    except ValueError:
+        return int(default) if default is not _REQUIRED else 0
+
+
+def _env_bool(key: str, default: bool = False) -> bool:
+    raw = os.getenv(key)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
 @dataclass(frozen=True)
@@ -61,13 +71,6 @@ class Config:
     )
     log_level: str = field(
         default_factory=lambda: _env_str("LOG_LEVEL", "INFO")
-    )
-
-    # -- External API keys --
-    # DEPRECATED: SimBrief OFP no longer requires an API key.
-    # Remove SIMBRIEF_API_KEY from your .env if present.
-    simbrief_api_key: str | None = field(
-        default_factory=lambda: _env_str("SIMBRIEF_API_KEY", None)
     )
 
     # -- API URLs --
@@ -122,6 +125,12 @@ class Config:
     ops_control_role_id: int = field(
         default_factory=lambda: _env_int("OPS_CONTROL_ROLE_ID", 0)
     )
+    developer_role_id: int = field(
+        default_factory=lambda: _env_int("DEVELOPER_ROLE_ID", 0)
+    )
+    ticket_transcript_channel_id: int = field(
+        default_factory=lambda: _env_int("TICKET_TRANSCRIPT_CHANNEL_ID", 0)
+    )
 
     # -- Beta Tester Program --
     beta_coordinator_role_id: int = field(
@@ -134,12 +143,36 @@ class Config:
         default_factory=lambda: _env_int("PUBLIC_BETA_ROLE_ID", 0)
     )
 
-    # -- SimBrief defaults (used for route generation links) --
+    # -- SimBrief (public XML fetcher; no API key required) --
     simbrief_user_id: str | None = field(
         default_factory=lambda: _env_str("SIMBRIEF_USER_ID", None)
     )
     simbrief_static_id: str | None = field(
         default_factory=lambda: _env_str("SIMBRIEF_STATIC_ID", None)
+    )
+
+    # -- Where2Fly route API (optional) --
+    where2fly_enabled: bool = field(
+        default_factory=lambda: _env_bool("WHERE2FLY_ENABLED", False)
+    )
+    where2fly_api_token: str | None = field(
+        default_factory=lambda: _env_str("WHERE2FLY_API_TOKEN", None)
+    )
+    where2fly_api_base_url: str = field(
+        default_factory=lambda: _env_str(
+            "WHERE2FLY_API_BASE_URL", "https://where2fly.today/"
+        )
+    )
+    where2fly_timeout_seconds: int = field(
+        default_factory=lambda: _env_int("WHERE2FLY_TIMEOUT_SECONDS", 15)
+    )
+
+    # -- Pending action dispatcher (admin panel -> bot) --
+    pending_action_poll_seconds: int = field(
+        default_factory=lambda: _env_int("PENDING_ACTION_POLL_SECONDS", 15)
+    )
+    pending_action_max_attempts: int = field(
+        default_factory=lambda: _env_int("PENDING_ACTION_MAX_ATTEMPTS", 3)
     )
 
     # -- Future PostgreSQL --

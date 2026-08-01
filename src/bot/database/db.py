@@ -2,18 +2,23 @@
 OPS CONTROL - Database Layer
 
 SQLite persistence with a migration-friendly design.
-All table schemas are defined here and executed idempotently via
-CREATE TABLE IF NOT EXISTS, so this file functions as both
-schema definition and migration.
+The bot owns database initialization and migration execution.
 
-To migrate to PostgreSQL later:
-    1. Replace aiosqlite with asyncpg / SQLAlchemy async.
-    2. The schema DDL is standard SQL — minimal changes needed.
+The canonical `pending_actions` schema lives HERE and must never diverge
+from the schema the admin API expects. The admin API (opsroom-website)
+writes into the same SQLite database via OPS_CONTROL_DB.
+
+Migration strategy:
+  * Fresh database      -> canonical CREATE TABLE (below)
+  * Legacy `payload`    -> transactional table rebuild into payload_json
+  * Missing columns     -> idempotent ALTER TABLE
+  * Existing data       -> preserved, never deleted
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from pathlib import Path
 
@@ -30,7 +35,26 @@ _db_lock: asyncio.Lock = asyncio.Lock()
 # Schema (DDL)
 # ---------------------------------------------------------------------------
 
-SCHEMA = """
+# Canonical pending_actions table. THE single source of truth for the
+# admin-panel -> bot action queue. Do not rename columns here without
+# updating both repositories.
+PENDING_ACTIONS_CANONICAL = """
+CREATE TABLE IF NOT EXISTS pending_actions (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    action_type           TEXT    NOT NULL,
+    payload_json          TEXT    NOT NULL,
+    status                TEXT    NOT NULL DEFAULT 'pending',
+    created_at            TEXT    NOT NULL,
+    scheduled_at          TEXT,
+    processing_started_at TEXT,
+    processed_at          TEXT,
+    attempts              INTEGER NOT NULL DEFAULT 0,
+    error                 TEXT,
+    result_json           TEXT
+);
+"""
+
+SCHEMA = f"""
 -- Users table — stores Discord user information
 CREATE TABLE IF NOT EXISTS users (
     id              INTEGER PRIMARY KEY,   -- Discord user ID
@@ -140,7 +164,15 @@ CREATE TABLE IF NOT EXISTS tickets (
     thread_id       INTEGER,
     channel_id      INTEGER,
     created_at      TEXT    NOT NULL,
-    updated_at      TEXT
+    updated_at      TEXT,
+    closed_by       INTEGER,
+    closed_at       TEXT,
+    transcript_status      TEXT,
+    transcript_filename    TEXT,
+    transcript_channel_id  INTEGER,
+    transcript_message_id  INTEGER,
+    transcript_dm_sent     INTEGER NOT NULL DEFAULT 0,
+    transcript_error       TEXT
 );
 
 -- Flight logs (prepared for future telemetry integration)
@@ -232,6 +264,8 @@ CREATE TABLE IF NOT EXISTS api_logs (
     created_at      TEXT    NOT NULL
 );
 
+{PENDING_ACTIONS_CANONICAL}
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_notams_active ON notams(is_active);
 CREATE INDEX IF NOT EXISTS idx_notams_priority ON notams(priority);
@@ -247,6 +281,9 @@ CREATE INDEX IF NOT EXISTS idx_flight_logs_user ON flight_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_events_user ON events(user_id);
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type);
 CREATE INDEX IF NOT EXISTS idx_simbrief_discord ON simbrief_accounts(discord_id);
+CREATE INDEX IF NOT EXISTS idx_pending_status ON pending_actions(status);
+CREATE INDEX IF NOT EXISTS idx_pending_scheduled_at ON pending_actions(scheduled_at);
+CREATE INDEX IF NOT EXISTS idx_pending_created_at ON pending_actions(created_at);
 """
 
 
@@ -271,6 +308,7 @@ async def get_db() -> aiosqlite.Connection:
                 _db.row_factory = aiosqlite.Row
                 await _db.execute("PRAGMA journal_mode=WAL")
                 await _db.execute("PRAGMA foreign_keys=ON")
+                await _db.execute("PRAGMA busy_timeout=5000")
                 logger.info("Connected to SQLite at %s", db_path)
 
     return _db
@@ -284,13 +322,137 @@ async def init_db() -> None:
     logger.info("Database schema verified.")
 
 
-async def run_migrations() -> None:
-    """Run safe ALTER TABLE migrations for existing deployments.
+# ---------------------------------------------------------------------------
+# pending_actions migration (canonical schema)
+# ---------------------------------------------------------------------------
 
-    Each ALTER is wrapped in a try/except so that fresh deployments
-    (which already have the columns from CREATE TABLE) don't fail.
+# Column names of the canonical pending_actions table.
+_CANONICAL_COLUMNS = {
+    "id", "action_type", "payload_json", "status", "created_at",
+    "scheduled_at", "processing_started_at", "processed_at",
+    "attempts", "error", "result_json",
+}
+
+
+async def _table_columns(db: aiosqlite.Connection) -> set[str]:
+    """Return the set of column names for pending_actions (empty if missing)."""
+    cursor = await db.execute("PRAGMA table_info(pending_actions)")
+    rows = await cursor.fetchall()
+    return {str(row["name"]) for row in rows}
+
+
+async def migrate_pending_actions(db: aiosqlite.Connection) -> None:
+    """Bring the pending_actions table to the canonical schema.
+
+    Handles:
+      * fresh DB (no table)              -> create canonical
+      * legacy table with `payload`      -> transactional rebuild into payload_json
+      * table with both payload/payload_json -> rebuild, prefer payload_json
+      * missing columns                  -> idempotent ALTER TABLE
+      * existing pending/completed rows  -> preserved
+      * repeated execution               -> no-op / safe
+
+    The bot owns schema migration; the admin API only reads/writes the
+    canonical columns.
     """
+    columns = await _table_columns(db)
+    if not columns:
+        # Table does not exist yet — canonical CREATE already ran in SCHEMA.
+        await db.execute(PENDING_ACTIONS_CANONICAL)
+        await db.commit()
+        logger.info("pending_actions table created (canonical).")
+        return
+
+    needs_rebuild = "payload" in columns
+    missing = _CANONICAL_COLUMNS - columns
+    if needs_rebuild or missing:
+        await _rebuild_pending_actions(db, columns)
+    else:
+        logger.info("pending_actions schema already canonical.")
+
+    # Indexes (idempotent)
+    for idx_sql in (
+        "CREATE INDEX IF NOT EXISTS idx_pending_status ON pending_actions(status)",
+        "CREATE INDEX IF NOT EXISTS idx_pending_scheduled_at ON pending_actions(scheduled_at)",
+        "CREATE INDEX IF NOT EXISTS idx_pending_created_at ON pending_actions(created_at)",
+    ):
+        try:
+            await db.execute(idx_sql)
+        except Exception:
+            logger.exception("Failed to create pending_actions index")
+    await db.commit()
+
+
+async def _rebuild_pending_actions(db: aiosqlite.Connection, columns: set[str]) -> None:
+    """Transactionally rebuild pending_actions into the canonical schema.
+
+    SQLite cannot drop a NOT NULL constraint, so a full rebuild is required
+    when a legacy `payload TEXT NOT NULL` column exists.
+    """
+    has_payload = "payload" in columns
+    has_payload_json = "payload_json" in columns
+    has_error = "error" in columns
+    has_error_detail = "error_detail" in columns
+    has_attempts = "attempts" in columns
+
+    # Build a per-row SELECT expression that prefers the canonical column
+    # and falls back to the legacy column when present.
+    payload_expr = (
+        "CASE WHEN payload_json IS NOT NULL THEN payload_json ELSE payload END"
+        if has_payload and has_payload_json
+        else "payload_json" if has_payload_json else "payload"
+    )
+    error_expr = (
+        "CASE WHEN error IS NOT NULL THEN error ELSE error_detail END"
+        if has_error and has_error_detail
+        else "error" if has_error else "error_detail" if has_error_detail else "NULL"
+    )
+    attempts_expr = "attempts" if has_attempts else "0"
+    result_expr = "result_json" if "result_json" in columns else "NULL"
+    scheduled_expr = "scheduled_at" if "scheduled_at" in columns else "NULL"
+    processing_expr = "processing_started_at" if "processing_started_at" in columns else "NULL"
+    processed_expr = "processed_at" if "processed_at" in columns else "NULL"
+
+    try:
+        await db.execute("BEGIN")
+        await db.execute("DROP TABLE IF EXISTS pending_actions_migrated")
+        await db.execute(PENDING_ACTIONS_CANONICAL.replace(
+            "pending_actions", "pending_actions_migrated"
+        ))
+        await db.execute(
+            f"""
+            INSERT INTO pending_actions_migrated (
+                id, action_type, payload_json, status, created_at,
+                scheduled_at, processing_started_at, processed_at,
+                attempts, error, result_json
+            )
+            SELECT
+                id, action_type, {payload_expr}, status, created_at,
+                {scheduled_expr}, {processing_expr}, {processed_expr},
+                {attempts_expr}, {error_expr}, {result_expr}
+            FROM pending_actions
+            """
+        )
+        await db.execute("DROP TABLE pending_actions")
+        await db.execute("ALTER TABLE pending_actions_migrated RENAME TO pending_actions")
+        await db.commit()
+        logger.info("pending_actions table rebuilt to canonical schema (%d rows migrated).")
+    except Exception:
+        await db.rollback()
+        raise
+
+
+async def run_migrations() -> None:
+    """Run safe, idempotent, non-destructive migrations for existing deployments."""
     db = await get_db()
+
+    # 1. pending_actions canonical schema (handles legacy payload rebuild)
+    try:
+        await migrate_pending_actions(db)
+    except Exception:
+        logger.exception("pending_actions migration failed — continuing with other migrations")
+
+    # 2. Column additions (tolerate duplicate-column errors on fresh DBs)
     migrations = [
         "ALTER TABLE users ADD COLUMN simulator TEXT",
         "ALTER TABLE users ADD COLUMN network TEXT",
@@ -305,6 +467,14 @@ async def run_migrations() -> None:
         "ALTER TABLE tickets ADD COLUMN subject TEXT",
         "ALTER TABLE tickets ADD COLUMN assigned_to INTEGER",
         "ALTER TABLE tickets ADD COLUMN priority TEXT NOT NULL DEFAULT 'Normal'",
+        "ALTER TABLE tickets ADD COLUMN closed_by INTEGER",
+        "ALTER TABLE tickets ADD COLUMN closed_at TEXT",
+        "ALTER TABLE tickets ADD COLUMN transcript_status TEXT",
+        "ALTER TABLE tickets ADD COLUMN transcript_filename TEXT",
+        "ALTER TABLE tickets ADD COLUMN transcript_channel_id INTEGER",
+        "ALTER TABLE tickets ADD COLUMN transcript_message_id INTEGER",
+        "ALTER TABLE tickets ADD COLUMN transcript_dm_sent INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE tickets ADD COLUMN transcript_error TEXT",
         "ALTER TABLE bugs ADD COLUMN channel_id INTEGER",
         "ALTER TABLE bugs ADD COLUMN title TEXT",
         "ALTER TABLE bugs ADD COLUMN assigned_to INTEGER",

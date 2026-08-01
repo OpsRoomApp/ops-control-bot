@@ -82,6 +82,15 @@ class OpsControlBot(commands.Bot):
         except Exception:
             logger.exception("Failed to send startup log")
 
+        # Start the pending actions dispatcher (admin panel -> bot -> Discord)
+        try:
+            from bot.services.pending_actions import pending_actions_loop
+            self._dispatcher_task = self.loop.create_task(pending_actions_loop(self))
+            logger.info("Pending actions dispatcher started.")
+        except Exception:
+            self._dispatcher_task = None
+            logger.exception("Failed to start pending actions dispatcher")
+
         self._startup_complete.set()
 
     async def close(self) -> None:
@@ -100,6 +109,17 @@ class OpsControlBot(commands.Bot):
             await close_db()
         except Exception:
             logger.exception("Error closing database during shutdown")
+        # Stop the pending actions dispatcher cleanly
+        task = getattr(self, "_dispatcher_task", None)
+        if task and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                logger.info("Pending actions dispatcher stopped cleanly.")
+            except Exception:
+                logger.exception("Error stopping pending actions dispatcher")
+
         try:
             from bot.api import close_api_session
             await close_api_session()

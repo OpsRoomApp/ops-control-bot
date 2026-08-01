@@ -68,7 +68,7 @@ async def format_release_announcement(repo: str | None = None) -> str | None:
         return None
 
     lines = [
-        f"🚀 **OPS ROOM {info.version}** has been released!",
+        f"**OPS ROOM {info.version}** has been released.",
         "",
     ]
     if info.body:
@@ -79,5 +79,5 @@ async def format_release_announcement(repo: str | None = None) -> str | None:
         lines.append(body)
         lines.append("")
 
-    lines.append(f"🔗 [Download & Changelog]({info.url})")
+    lines.append(f"[Download and Changelog]({info.url})")
     return "\n".join(lines)
