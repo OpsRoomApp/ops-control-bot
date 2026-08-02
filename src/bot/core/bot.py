@@ -156,6 +156,7 @@ class OpsControlBot(commands.Bot):
         """Register persistent views so they survive bot restarts."""
         try:
             from bot.cogs.ticket_system import (
+                CloseReasonModal,
                 SupportPanelView,
                 TicketActionView,
                 EscalateToSupportView,
@@ -163,6 +164,9 @@ class OpsControlBot(commands.Bot):
             self.add_view(SupportPanelView())
             self.add_view(TicketActionView())
             self.add_view(EscalateToSupportView())
+            # v0.25.55 (B4) -- persistent reaction-role panel
+            from bot.cogs.roles_cog import PersistentRolePanel
+            self.add_view(PersistentRolePanel())
             logger.info("Persistent views registered.")
         except Exception:
             logger.exception("Failed to register persistent views")

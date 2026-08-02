@@ -284,6 +284,71 @@ CREATE INDEX IF NOT EXISTS idx_simbrief_discord ON simbrief_accounts(discord_id)
 CREATE INDEX IF NOT EXISTS idx_pending_status ON pending_actions(status);
 CREATE INDEX IF NOT EXISTS idx_pending_scheduled_at ON pending_actions(scheduled_at);
 CREATE INDEX IF NOT EXISTS idx_pending_created_at ON pending_actions(created_at);
+
+-- v0.25.55 - Moderation cases (B2)
+CREATE TABLE IF NOT EXISTS moderation_cases (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         INTEGER NOT NULL,
+    guild_id        INTEGER NOT NULL,
+    action_type     TEXT    NOT NULL,
+    reason          TEXT,
+    moderator_id    INTEGER NOT NULL,
+    created_at      TEXT    NOT NULL,
+    expires_at      TEXT,
+    active          INTEGER NOT NULL DEFAULT 1
+);
+
+-- v0.25.55 - Appeals (B2 + C4)
+CREATE TABLE IF NOT EXISTS appeals (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         INTEGER,
+    username        TEXT,
+    action_type     TEXT,
+    statement       TEXT    NOT NULL,
+    status          TEXT    NOT NULL DEFAULT 'pending',
+    reviewed_by     INTEGER,
+    reviewed_at     TEXT,
+    resolution      TEXT,
+    created_at      TEXT    NOT NULL
+);
+
+-- v0.25.55 - VATSIM event tracking (B3)
+CREATE TABLE IF NOT EXISTS vatsim_events (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id        TEXT    NOT NULL UNIQUE,
+    title           TEXT    NOT NULL,
+    start_time      TEXT    NOT NULL,
+    end_time        TEXT,
+    posted          INTEGER NOT NULL DEFAULT 0,
+    reminded        INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT    NOT NULL
+);
+
+-- v0.25.55 - Automod configuration (B2 + C2)
+CREATE TABLE IF NOT EXISTS automod_config (
+    rule_key        TEXT    PRIMARY KEY,
+    enabled         INTEGER NOT NULL DEFAULT 1,
+    action          TEXT    NOT NULL DEFAULT 'warn',
+    threshold       REAL,
+    config_json     TEXT,
+    updated_by      INTEGER,
+    updated_at      TEXT    NOT NULL
+);
+
+-- v0.25.55 - Staff allowlist (C3)
+-- Flexible shape: provider ('github'|'discord') + identifier
+-- (lowercased GitHub username, or Discord user ID string). Env vars seed
+-- this on first boot; the admin panel manages it live afterwards.
+CREATE TABLE IF NOT EXISTS staff_allowlist (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider    TEXT    NOT NULL,
+    identifier  TEXT    NOT NULL,
+    display     TEXT,
+    added_by    INTEGER,
+    added_at    TEXT    NOT NULL,
+    UNIQUE(provider, identifier)
+);
+
 """
 
 
@@ -478,6 +543,14 @@ async def run_migrations() -> None:
         "ALTER TABLE bugs ADD COLUMN channel_id INTEGER",
         "ALTER TABLE bugs ADD COLUMN title TEXT",
         "ALTER TABLE bugs ADD COLUMN assigned_to INTEGER",
+        # v0.25.55 - ticket close reason (B1)
+        "ALTER TABLE tickets ADD COLUMN close_reason TEXT",
+        # v0.25.55 - hosted transcript URL (B1 + C1)
+        "ALTER TABLE tickets ADD COLUMN transcript_url TEXT",
+        # v0.25.55 - announcement scheduling + templates (C2)
+        "ALTER TABLE announcements ADD COLUMN scheduled_at TEXT",
+        "ALTER TABLE announcements ADD COLUMN status TEXT NOT NULL DEFAULT sent",
+        "ALTER TABLE announcements ADD COLUMN template_name TEXT",
     ]
     for stmt in migrations:
         try:

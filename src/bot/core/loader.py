@@ -39,6 +39,10 @@ _REQUIRED_COGS: list[str] = [
     "bot.cogs.betatester",
     "bot.cogs.roles_cog",
     "bot.cogs.randomroute",
+    # v0.25.55 (B2) -- full moderation suite + automod
+    "bot.cogs.moderation",
+    # v0.25.55 (B3) -- VATSIM event reminders
+    "bot.cogs.vatsim_events",
 ]
 
 

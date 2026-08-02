@@ -13,6 +13,38 @@ from discord import app_commands
 from bot.config import config
 
 
+async def is_staff(interaction_or_message: discord.Interaction | discord.Message) -> bool:
+    """Return True when the user is bot owner, a guild admin, or holds any
+    staff role (OPS CONTROL / Moderator / Support Dispatch).
+
+    Accepts either an Interaction or a Message so it can guard both slash
+    commands and on_message automod listeners.
+    """
+    user = getattr(interaction_or_message, "user", None) or getattr(interaction_or_message, "author", None)
+    if user is None:
+        return False
+    if user.id == config.owner_user_id:
+        return True
+    member = user if isinstance(user, discord.Member) else None
+    if member is None:
+        # Try resolving the author against the guild when available.
+        guild = getattr(interaction_or_message, "guild", None)
+        if guild is not None:
+            member = guild.get_member(user.id)
+    if member is not None and member.guild_permissions.administrator:
+        return True
+    staff_role_ids = {
+        r for r in (
+            config.ops_control_role_id,
+            config.moderator_role_id,
+            config.support_dispatch_role_id,
+        ) if r
+    }
+    if not staff_role_ids:
+        return False
+    return any(r.id in staff_role_ids for r in member.roles) if member is not None else False
+
+
 async def require_owner(interaction: discord.Interaction) -> bool:
     """
     Ensure the interaction user is the bot owner.

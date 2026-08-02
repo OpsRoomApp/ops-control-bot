@@ -27,6 +27,18 @@ services:
       - LOG_PATH=/app/logs/ops-control.log
       - ASSETS_DIR=/app/assets
       - TZ=${TIMEZONE:-UTC}
+      # Moderation / automod (B2)
+      - MOD_LOG_CHANNEL_ID=${MOD_LOG_CHANNEL_ID:-}
+      - MUTED_ROLE_ID=${MUTED_ROLE_ID:-}
+      # VATSIM event reminders (B3)
+      - VATSIM_EVENTS_CHANNEL_ID=${VATSIM_EVENTS_CHANNEL_ID:-}
+      # Admin API integration (B1 hosted transcripts, C4 appeals)
+      - ADMIN_API_BASE_URL=${ADMIN_API_BASE_URL:-https://admin.opsroom.live}
+      - ADMIN_API_TOKEN=${ADMIN_API_TOKEN:-}
+      - APPEAL_FORM_URL=${APPEAL_FORM_URL:-https://opsroom.live/appeal}
+      # Pending action dispatcher
+      - PENDING_ACTION_POLL_SECONDS=${PENDING_ACTION_POLL_SECONDS:-15}
+      - PENDING_ACTION_MAX_ATTEMPTS=${PENDING_ACTION_MAX_ATTEMPTS:-3}
 
   # -----------------------------------------------
   # Future: PostgreSQL

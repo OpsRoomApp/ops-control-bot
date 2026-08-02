@@ -231,6 +231,7 @@ KNOWN_ACTION_TYPES: frozenset[str] = frozenset({
     "announcement", "scheduled_announcement",
     "add_verified", "remove_verified", "add_beta", "remove_beta",
     "ticket_assign", "ticket_close", "ticket_reopen",
+    "moderation_reverse",  # C2 -- appeal approval reverses ban/timeout
     "announce_dispatch", "beta_role_change", "ticket_state_change",
 })
 
@@ -250,6 +251,8 @@ async def _execute(bot: commands.Bot, action_type: str, payload: dict[str, Any])
         "ticket_assign": _dispatch_ticket_assign,
         "ticket_close": _dispatch_ticket_close,
         "ticket_reopen": _dispatch_ticket_reopen,
+        # C2 -- appeal approval reverses a ban or timeout on Discord
+        "moderation_reverse": _dispatch_moderation_reverse,
         # Legacy aliases (processed for backwards compatibility)
         "announce_dispatch": _dispatch_announcement,
         "beta_role_change": _dispatch_legacy_beta,
@@ -368,6 +371,76 @@ async def _dispatch_legacy_beta(bot: commands.Bot, payload: dict[str, Any]) -> N
     if mapped in ("add", "remove"):
         raise ValueError(f"Unknown beta action: {action}")
     await _dispatch_beta_role(bot, payload, mapped)
+
+
+async def _dispatch_moderation_reverse(bot: commands.Bot, payload: dict[str, Any]) -> dict[str, Any]:
+    """Reverse a moderation action after an appeal is approved (C2).
+
+    Payload: discord_id, reverse_action ('ban'|'timeout'|'mute'), appeal_id,
+    optional resolution. Unbans the user or clears their timeout on Discord.
+    A ban is the only action that must be reversed explicitly -- timeouts
+    naturally expire, but an approved appeal should clear them immediately.
+    """
+    discord_id = int(payload.get("discord_id", 0) or 0)
+    if not discord_id:
+        raise ValueError("Missing discord_id in moderation_reverse payload")
+
+    guild = bot.get_guild(config.guild_id)
+    if not guild:
+        raise ValueError(f"Guild {config.guild_id} not found")
+
+    reverse_action = str(payload.get("reverse_action") or "ban").lower()
+    appeal_id = payload.get("appeal_id")
+    resolution = str(payload.get("resolution") or "Appeal approved")
+
+    result: dict[str, Any] = {"discord_id": discord_id, "reverse_action": reverse_action}
+
+    if reverse_action == "ban" or reverse_action == "unban":
+        try:
+            ban_entry = await guild.fetch_ban(discord.Object(id=discord_id))
+            await guild.unban(ban_entry.user, reason=f"Appeal #{appeal_id} approved: {resolution}")
+            result["unbanned"] = True
+            logger.info("Appeal #%s: unbanned %s", appeal_id, discord_id)
+        except discord.NotFound:
+            result["unbanned"] = False
+            result["note"] = "No ban found (already unbanned)"
+        except discord.Forbidden as exc:
+            raise ValueError(f"Cannot unban {discord_id}: missing permissions ({exc})")
+
+    elif reverse_action in ("timeout", "untimeout"):
+        member = guild.get_member(discord_id)
+        if member is None:
+            try:
+                member = await guild.fetch_member(discord_id)
+            except Exception:
+                member = None
+        if member is not None:
+            await member.timeout(None, reason=f"Appeal #{appeal_id} approved: {resolution}")
+            result["timeout_cleared"] = True
+            logger.info("Appeal #%s: cleared timeout for %s", appeal_id, discord_id)
+        else:
+            result["timeout_cleared"] = False
+            result["note"] = "Member not in guild (timeout cleared automatically on leave)"
+
+    elif reverse_action == "mute":
+        member = guild.get_member(discord_id)
+        if member is not None and config.muted_role_id:
+            role = guild.get_role(config.muted_role_id)
+            if role and role in member.roles:
+                await member.remove_roles(role, reason=f"Appeal #{appeal_id} approved: {resolution}")
+                result["mute_removed"] = True
+        db = await get_db()
+        await db.execute(
+            "UPDATE moderation_cases SET active=0 WHERE user_id=? AND action_type='MUTE' AND active=1",
+            (discord_id,),
+        )
+        await db.commit()
+        result["mute_removed"] = result.get("mute_removed", False) or True
+
+    else:
+        raise ValueError(f"Unknown reverse_action: {reverse_action}")
+
+    return result
 
 
 async def _dispatch_ticket_assign(bot: commands.Bot, payload: dict[str, Any]) -> None:

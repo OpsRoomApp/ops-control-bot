@@ -12,7 +12,7 @@ import logging
 
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 from bot.config import config
 from bot.api import fetch_github_latest_release, fetch_opsroom_releases_manifest
@@ -51,6 +51,50 @@ class ReleasesCog(commands.Cog):
 
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
+
+    # v0.25.55 (B5) — Changelog auto-announce background task
+    _last_announced_tag: str | None = None
+
+    async def cog_load(self):
+        if config.discord_announcement_channel:
+            self._release_poller.start()
+
+    async def cog_unload(self):
+        if hasattr(self, "_release_poller") and self._release_poller.is_running():
+            self._release_poller.cancel()
+
+    @tasks.loop(minutes=30)
+    async def _release_poller(self):
+        """Poll GitHub for new releases and auto-announce to the configured channel."""
+        try:
+            release = await fetch_github_latest_release(config.github_repo)
+        except Exception:
+            return
+        if not release:
+            return
+        tag = str(release.get("tag_name") or "")
+        if not tag or tag == self._last_announced_tag:
+            return
+        self._last_announced_tag = tag
+        version = tag.lstrip("v")
+        body = (release.get("body") or "")[:1500]
+        channel = self.bot.get_channel(config.discord_announcement_channel)
+        if not channel or not isinstance(channel, discord.TextChannel):
+            return
+        embed = discord.Embed(
+            title=f"OPS ROOM {version} Released",
+            description=body if body else "No release notes available.",
+            color=0x2563EB,
+            url=f"https://github.com/{config.github_repo}/releases/tag/{tag}",
+        )
+        embed.add_field(name="Version", value=version, inline=True)
+        embed.add_field(name="Download", value="[opsroom.live/downloads](https://opsroom.live/downloads)", inline=True)
+        try:
+            await channel.send(embed=embed)
+        except discord.Forbidden:
+            pass
+
+
 
     @app_commands.command(
         name="latest",

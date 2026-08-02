@@ -402,6 +402,31 @@ class EscalateToSupportView(discord.ui.View):
 # ---------------------------------------------------------------------------
 
 
+
+# v0.25.55 (B1) — Close-reason prompt shown to staff before closing a ticket
+class CloseReasonModal(discord.ui.Modal, title="Close Ticket"):
+    """Prompt staff for a close reason before finalising the ticket."""
+
+    reason = discord.ui.TextInput(
+        label="Close reason",
+        style=discord.TextStyle.paragraph,
+        required=True,
+        min_length=4,
+        max_length=500,
+        placeholder="Briefly explain why this ticket is being closed...",
+    )
+
+    def __init__(self, view, interaction: discord.Interaction):
+        super().__init__()
+        self._view = view
+        self._orig_interaction = interaction
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        await self._view._close_with_reason(self._orig_interaction, str(self.reason))
+
+
+
 class TicketActionView(discord.ui.View):
     """View with claim and close buttons for ticket channels."""
 
@@ -452,7 +477,7 @@ class TicketActionView(discord.ui.View):
 
     @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.danger, custom_id="ticket:close")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        """Close the ticket channel with a full transcript workflow (staff only)."""
+        """Prompt staff for a close reason, then close the ticket (v0.25.55)."""
         if not isinstance(interaction.user, discord.Member):
             await interaction.response.defer(ephemeral=True)
             return
@@ -464,7 +489,13 @@ class TicketActionView(discord.ui.View):
             )
             return
 
-        await interaction.response.send_message("Closing ticket...", ephemeral=True)
+        # v0.25.55: show the close-reason modal instead of closing immediately
+        await interaction.response.send_modal(CloseReasonModal(self, interaction))
+
+
+    async def _close_with_reason(self, interaction: discord.Interaction, close_reason: str) -> None:
+        """v0.25.55: Perform the actual close after staff has provided a reason."""
+        await interaction.followup.send("Closing ticket...", ephemeral=True)
 
         # Resolve ticket info from database
         ch_id = interaction.channel_id
@@ -566,6 +597,7 @@ class TicketActionView(discord.ui.View):
             assigned_staff=assigned_staff_name,
             opened_at=t_created,
             ticket_number=self._ticket_num or t_id,
+            close_reason=close_reason,
         )
 
         if transcript_result["transcript_status"] == "failed":

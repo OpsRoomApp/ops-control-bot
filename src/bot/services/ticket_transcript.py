@@ -19,12 +19,14 @@ Workflow (idempotent):
 from __future__ import annotations
 
 import html
+import json
 import logging
 import re
 from datetime import datetime, timezone
 from io import BytesIO
 from typing import TYPE_CHECKING, Any
 
+import aiohttp
 import discord
 
 from bot.config import config
@@ -184,6 +186,8 @@ async def _update_ticket_metadata(
     transcript_message_id: int | None,
     transcript_dm_sent: int,
     transcript_error: str | None,
+    close_reason: str | None = None,
+    transcript_url: str | None = None,
 ) -> None:
     db = await get_db()
     await db.execute(
@@ -192,7 +196,8 @@ async def _update_ticket_metadata(
         SET status = ?, closed_by = ?, closed_at = ?, updated_at = ?,
             transcript_status = ?, transcript_filename = ?,
             transcript_channel_id = ?, transcript_message_id = ?,
-            transcript_dm_sent = ?, transcript_error = ?
+            transcript_dm_sent = ?, transcript_error = ?,
+            close_reason = ?, transcript_url = ?
         WHERE id = ?
         """,
         (
@@ -200,10 +205,59 @@ async def _update_ticket_metadata(
             transcript_status, transcript_filename,
             transcript_channel_id, transcript_message_id,
             transcript_dm_sent, transcript_error,
+            close_reason, transcript_url,
             ticket_id,
         ),
     )
     await db.commit()
+
+
+async def _post_transcript_to_admin_api(payload: dict[str, Any]) -> tuple[bool, str, str | None]:
+    """POST a transcript payload to the admin API hosted-transcript endpoint.
+
+    Returns (ok, message, transcript_url). transcript_url is the full public
+    URL (e.g. https://opsroom.live/transcripts/{id}) on success, else None.
+    """
+    base_url = (config.admin_api_base_url or "").rstrip("/")
+    token = config.admin_api_token or ""
+    if not base_url or not token:
+        return False, "Hosted transcripts disabled (ADMIN_API_BASE_URL / ADMIN_API_TOKEN not set)", None
+
+    url = f"{base_url}/api/v1/transcripts/store"
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        timeout = aiohttp.ClientTimeout(total=20)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(url, json=payload, headers=headers) as resp:
+                if resp.status == 401 or resp.status == 403:
+                    body = await _safe_body(resp)
+                    return False, f"admin-api rejected the request (HTTP {resp.status}): {body}", None
+                if resp.status >= 400:
+                    body = await _safe_body(resp)
+                    return False, f"admin-api error (HTTP {resp.status}): {body}", None
+                try:
+                    data = await resp.json()
+                except Exception:
+                    return False, "admin-api returned malformed JSON", None
+                rel = data.get("url") or ""
+                if not data.get("ok") or not rel:
+                    return False, "admin-api did not return a transcript URL", None
+                full_url = f"https://opsroom.live{rel}" if rel.startswith("/") else rel
+                return True, "", full_url
+    except aiohttp.ClientConnectionError as exc:
+        return False, f"admin-api unreachable: {exc}", None
+    except aiohttp.ServerTimeoutError as exc:
+        return False, f"admin-api timeout: {exc}", None
+    except Exception as exc:
+        return False, f"admin-api POST failed: {exc}", None
+
+
+async def _safe_body(resp: aiohttp.ClientResponse) -> str:
+    try:
+        text = await resp.text()
+        return text[:200]
+    except Exception:
+        return "(no body)"
 
 
 async def close_ticket_with_transcript(
@@ -219,8 +273,14 @@ async def close_ticket_with_transcript(
     assigned_staff: str | None,
     opened_at: str,
     ticket_number: int,
+    close_reason: str | None = None,
 ) -> dict[str, Any]:
     """Close a ticket channel with a full transcript workflow.
+
+    Delivery order:
+      1. Hosted transcript (POST to admin-api) -- preferred.
+      2. Discord archive-channel upload -- fallback so a transcript is
+         never silently lost if the website endpoint is unreachable.
 
     Returns a dict with transcript_status and delivery metadata.
     Raises nothing on expected failure paths; always leaves the DB consistent.
@@ -236,6 +296,7 @@ async def close_ticket_with_transcript(
         "archive_message_id": None,
         "dm_sent": 0,
         "error": None,
+        "transcript_url": None,
     }
 
     # 1. Fetch history
@@ -249,6 +310,7 @@ async def close_ticket_with_transcript(
             transcript_status="failed", transcript_filename=filename,
             transcript_channel_id=None, transcript_message_id=None,
             transcript_dm_sent=0, transcript_error=result["error"],
+            close_reason=close_reason,
         )
         return result
 
@@ -269,10 +331,44 @@ async def close_ticket_with_transcript(
     transcript_bytes.seek(0)
     attachment = discord.File(transcript_bytes, filename=filename)
 
-    # 3. Archive channel delivery.
-    # A configured archive channel that cannot be resolved is an archive
-    # FAILURE: the ticket must be preserved (never deleted), marked failed,
-    # staff notified, and retried later.
+    # 3. Hosted transcript delivery (preferred, B1/C1).
+    # POST the transcript payload to the admin API. On success the public
+    # transcript link replaces the raw-HTML-upload-to-Discord behaviour.
+    hosted_ok = False
+    hosted_url: str | None = None
+    hosted_error: str | None = None
+    transcript_payload = {
+        "ticket_id": ticket_id,
+        "ticket_number": ticket_number,
+        "creator_name": creator_name,
+        "subject": subject or "No subject",
+        "priority": priority,
+        "assigned_staff": assigned_staff,
+        "opened_at": opened_at,
+        "closed_at": now_iso,
+        "closed_by": closer.display_name or closer.name,
+        "close_reason": close_reason,
+        "channel_name": channel.name,
+        "messages": messages,
+    }
+    hosted_ok, hosted_error, hosted_url = await _post_transcript_to_admin_api(transcript_payload)
+    if hosted_ok and hosted_url:
+        result["transcript_url"] = hosted_url
+        logger.info("Ticket #%s transcript stored at %s", ticket_number, hosted_url)
+    else:
+        # Distinguish "unreachable" from "rejected" in the log.
+        logger.warning(
+            "Hosted transcript delivery failed for ticket #%s (%s) -- falling back to Discord upload",
+            ticket_number,
+            hosted_error,
+        )
+
+    # 4. Archive channel delivery (fallback and/or archive copy).
+    # If hosted delivery succeeded we post a clean link embed instead of the
+    # raw HTML dump. If hosted delivery failed AND an archive channel is
+    # configured, fall back to uploading the HTML file so the transcript is
+    # never silently lost. A missing archive channel is only fatal when
+    # hosted delivery also failed.
     archive_channel = None
     archive_error = None
     if config.ticket_transcript_channel_id:
@@ -281,10 +377,10 @@ async def close_ticket_with_transcript(
             archive_channel = None
             archive_error = f"Archive channel {config.ticket_transcript_channel_id} not found"
             logger.warning("Transcript archive channel %s not found", config.ticket_transcript_channel_id)
-    else:
+    elif not hosted_ok:
         archive_error = "Transcript archive channel is not configured (TICKET_TRANSCRIPT_CHANNEL_ID)"
 
-    if archive_error:
+    if archive_error and not hosted_ok:
         result["error"] = archive_error
         await _update_ticket_metadata(
             ticket_id, status="open", closed_by=closer.id, closed_at=now_iso,
@@ -292,6 +388,7 @@ async def close_ticket_with_transcript(
             transcript_channel_id=config.ticket_transcript_channel_id or None,
             transcript_message_id=None, transcript_dm_sent=0,
             transcript_error=result["error"],
+            close_reason=close_reason,
         )
         # Keep the channel; notify staff; allow retry.
         await _notify_staff_retry(channel, ticket_number, result["error"])
@@ -311,24 +408,42 @@ async def close_ticket_with_transcript(
             archive_embed.add_field(name="Subject", value=subject or "No subject", inline=False)
             archive_embed.add_field(name="Opened", value=opened_at, inline=True)
             archive_embed.add_field(name="Closed", value=now_iso, inline=True)
-            msg = await archive_channel.send(embed=archive_embed, file=attachment)
+            if hosted_ok and hosted_url:
+                archive_embed.add_field(
+                    name="Transcript",
+                    value=f"[View hosted transcript]({hosted_url}) · expires in {getattr(config, 'transcript_retention_days', 14)} days",
+                    inline=False,
+                )
+                if close_reason:
+                    archive_embed.add_field(name="Close Reason", value=close_reason[:1024], inline=False)
+                msg = await archive_channel.send(embed=archive_embed)
+            else:
+                # Fallback: upload the raw HTML transcript.
+                if close_reason:
+                    archive_embed.add_field(name="Close Reason", value=close_reason[:1024], inline=False)
+                msg = await archive_channel.send(embed=archive_embed, file=attachment)
             archive_message_id = msg.id
             result["archive_message_id"] = archive_message_id
         except Exception as exc:
             logger.exception("Failed to archive transcript")
-            result["error"] = f"Archive delivery failed: {exc}"
-            await _update_ticket_metadata(
-                ticket_id, status="open", closed_by=closer.id, closed_at=now_iso,
-                transcript_status="failed", transcript_filename=filename,
-                transcript_channel_id=config.ticket_transcript_channel_id or None,
-                transcript_message_id=None, transcript_dm_sent=0,
-                transcript_error=result["error"],
-            )
-            # Keep the channel; notify staff; allow retry.
-            await _notify_staff_retry(channel, ticket_number, result["error"])
-            return result
+            if not hosted_ok:
+                result["error"] = f"Archive delivery failed: {exc}"
+                await _update_ticket_metadata(
+                    ticket_id, status="open", closed_by=closer.id, closed_at=now_iso,
+                    transcript_status="failed", transcript_filename=filename,
+                    transcript_channel_id=config.ticket_transcript_channel_id or None,
+                    transcript_message_id=None, transcript_dm_sent=0,
+                    transcript_error=result["error"],
+                    close_reason=close_reason,
+                )
+                # Keep the channel; notify staff; allow retry.
+                await _notify_staff_retry(channel, ticket_number, result["error"])
+                return result
+            # Hosted delivery already succeeded -- archive failure is logged
+            # but not fatal (the transcript is durably stored on the website).
+            logger.warning("Archive channel copy failed but hosted transcript exists for ticket #%s", ticket_number)
 
-    # 4. DM the creator (non-fatal)
+    # 5. DM the creator (non-fatal)
     dm_sent = 0
     dm_error = None
     try:
@@ -350,8 +465,16 @@ async def close_ticket_with_transcript(
             )
             dm_embed.add_field(name="Ticket", value=f"#{ticket_number}", inline=True)
             dm_embed.add_field(name="Subject", value=subject or "No subject", inline=True)
-            transcript_bytes.seek(0)
-            await creator.send(embed=dm_embed, file=discord.File(transcript_bytes, filename=filename))
+            if hosted_ok and hosted_url:
+                dm_embed.add_field(
+                    name="Transcript",
+                    value=f"[View transcript]({hosted_url}) · expires in {getattr(config, 'transcript_retention_days', 14)} days",
+                    inline=False,
+                )
+                await creator.send(embed=dm_embed)
+            else:
+                transcript_bytes.seek(0)
+                await creator.send(embed=dm_embed, file=discord.File(transcript_bytes, filename=filename))
             dm_sent = 1
         else:
             dm_error = "Creator not found"
@@ -365,7 +488,7 @@ async def close_ticket_with_transcript(
     if dm_error:
         result["error"] = (result["error"] or "") + f" DM: {dm_error}" if result["error"] else f"DM: {dm_error}"
 
-    # 5. Finalize: mark closed + transcript delivered
+    # 6. Finalize: mark closed + transcript delivered
     await _update_ticket_metadata(
         ticket_id, status="closed", closed_by=closer.id, closed_at=now_iso,
         transcript_status="delivered",
@@ -374,6 +497,8 @@ async def close_ticket_with_transcript(
         transcript_message_id=archive_message_id,
         transcript_dm_sent=dm_sent,
         transcript_error=result["error"],
+        close_reason=close_reason,
+        transcript_url=hosted_url,
     )
     result["transcript_status"] = "delivered"
 

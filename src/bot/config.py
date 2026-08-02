@@ -128,13 +128,18 @@ class Config:
     developer_role_id: int = field(
         default_factory=lambda: _env_int("DEVELOPER_ROLE_ID", 0)
     )
+
+    # -- Transcript archive --
     ticket_transcript_channel_id: int = field(
         default_factory=lambda: _env_int("TICKET_TRANSCRIPT_CHANNEL_ID", 0)
     )
 
-    # -- Beta Tester Program --
-    beta_coordinator_role_id: int = field(
-        default_factory=lambda: _env_int("BETA_COORDINATOR_ROLE_ID", 0)
+    # -- Moderation / automod (B2) --
+    mod_log_channel_id: int = field(
+        default_factory=lambda: _env_int("MOD_LOG_CHANNEL_ID", 0)
+    )
+    muted_role_id: int = field(
+        default_factory=lambda: _env_int("MUTED_ROLE_ID", 0)
     )
     verified_tester_role_id: int = field(
         default_factory=lambda: _env_int("VERIFIED_TESTER_ROLE_ID", 0)
@@ -143,31 +148,30 @@ class Config:
         default_factory=lambda: _env_int("PUBLIC_BETA_ROLE_ID", 0)
     )
 
-    # -- SimBrief (public XML fetcher; no API key required) --
-    simbrief_user_id: str | None = field(
-        default_factory=lambda: _env_str("SIMBRIEF_USER_ID", None)
-    )
-    simbrief_static_id: str | None = field(
-        default_factory=lambda: _env_str("SIMBRIEF_STATIC_ID", None)
+    # -- VATSIM events (B3) --
+    vatsim_events_channel_id: int = field(
+        default_factory=lambda: _env_int("VATSIM_EVENTS_CHANNEL_ID", 0)
     )
 
-    # -- Where2Fly route API (optional) --
-    where2fly_enabled: bool = field(
-        default_factory=lambda: _env_bool("WHERE2FLY_ENABLED", False)
-    )
-    where2fly_api_token: str | None = field(
-        default_factory=lambda: _env_str("WHERE2FLY_API_TOKEN", None)
-    )
-    where2fly_api_base_url: str = field(
+    # -- Admin API integration (B1 hosted transcripts, C4 appeals) --
+    admin_api_base_url: str = field(
         default_factory=lambda: _env_str(
-            "WHERE2FLY_API_BASE_URL", "https://where2fly.today/"
+            "ADMIN_API_BASE_URL", "https://admin.opsroom.live"
         )
     )
-    where2fly_timeout_seconds: int = field(
-        default_factory=lambda: _env_int("WHERE2FLY_TIMEOUT_SECONDS", 15)
+    admin_api_token: str = field(
+        default_factory=lambda: _env_str("ADMIN_API_TOKEN", "")
+    )
+    appeal_form_url: str = field(
+        default_factory=lambda: _env_str(
+            "APPEAL_FORM_URL", "https://opsroom.live/appeal"
+        )
+    )
+    transcript_retention_days: int = field(
+        default_factory=lambda: _env_int("TRANSCRIPT_RETENTION_DAYS", 14)
     )
 
-    # -- Pending action dispatcher (admin panel -> bot) --
+    # -- Pending action dispatcher --
     pending_action_poll_seconds: int = field(
         default_factory=lambda: _env_int("PENDING_ACTION_POLL_SECONDS", 15)
     )
@@ -175,10 +179,24 @@ class Config:
         default_factory=lambda: _env_int("PENDING_ACTION_MAX_ATTEMPTS", 3)
     )
 
-    # -- Future PostgreSQL --
-    database_url: str | None = field(
-        default_factory=lambda: _env_str("DATABASE_URL", None)
+    # -- Where2Fly route provider (pre-existing service, fields were missing) --
+    where2fly_enabled: bool = field(
+        default_factory=lambda: _env_bool("WHERE2FLY_ENABLED", False)
+    )
+    where2fly_api_base_url: str = field(
+        default_factory=lambda: _env_str(
+            "WHERE2FLY_API_BASE_URL", "https://where2fly.today"
+        )
+    )
+    where2fly_api_token: str = field(
+        default_factory=lambda: _env_str("WHERE2FLY_API_TOKEN", "")
+    )
+    where2fly_timeout_seconds: int = field(
+        default_factory=lambda: _env_int("WHERE2FLY_TIMEOUT_SECONDS", 15)
     )
 
 
+# Single shared configuration instance consumed across the codebase.
+# Required env vars (DISCORD_TOKEN etc.) raise at startup if missing.
 config = Config()
+
