@@ -198,6 +198,14 @@ class Config:
         default_factory=lambda: _env_int("PENDING_ACTION_MAX_ATTEMPTS", 3)
     )
 
+    # -- SimBrief route-generation links (optional default account) --
+    simbrief_user_id: str = field(
+        default_factory=lambda: _env_str("SIMBRIEF_USER_ID", "")
+    )
+    simbrief_static_id: str = field(
+        default_factory=lambda: _env_str("SIMBRIEF_STATIC_ID", "")
+    )
+
     # -- Where2Fly route provider (pre-existing service, fields were missing) --
     where2fly_enabled: bool = field(
         default_factory=lambda: _env_bool("WHERE2FLY_ENABLED", False)
