@@ -153,7 +153,7 @@ class Config:
         default_factory=lambda: _env_int("VATSIM_EVENTS_CHANNEL_ID", 0)
     )
     vatsim_events_announce_minutes: int = field(
-        default_factory=lambda: _env_int("VATSIM_EVENTS_ANNOUNCE_MINUTES", 60)
+        default_factory=lambda: _env_int("VATSIM_EVENTS_ANNOUNCE_MINUTES", 90)
     )
     vatsim_events_reminder_minutes: int = field(
         default_factory=lambda: _env_int("VATSIM_EVENTS_REMINDER_MINUTES", 30)

@@ -91,7 +91,13 @@ class RulesCog(commands.Cog):
             color=0x2563EB,
         )
         embed.set_footer(text="OPS ROOM Operations | Maintained by the owner")
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.defer(ephemeral=True)
+        if interaction.channel is not None:
+            await interaction.channel.send(embed=embed)
+        await interaction.followup.send(
+            "Community rules posted to this channel.",
+            ephemeral=True,
+        )
 
     @app_commands.command(
         name="rules-set",

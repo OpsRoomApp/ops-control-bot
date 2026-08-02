@@ -1,12 +1,14 @@
 """
-v0.25.55 (B3) -- VATSIM events poller tests.
+v0.25.58 -- VATSIM events poller tests.
 
 Covers:
   * duplicate-post prevention: posting the same event twice (simulated bot
     restart with a fresh cog instance against the same DB) must not double-post
   * announcements fire only once the event is inside the announce window
-    (default 60 min before start)
+    (default 90 min before start)
   * reminder is sent at most once, inside the reminder window (default 30 min)
+  * reminders are rich embeds (never plain text), carrying the local-time
+    timestamp footer
   * events already started are skipped entirely
   * the announcement embed includes the event banner image
 """
@@ -134,7 +136,11 @@ class VatsimEventsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(row["reminded"], 0)  # not yet within reminder window
 
     async def test_reminder_sent_once_then_suppressed(self):
-        """Event starting in 10 minutes: announcement, then a single reminder."""
+        """Event starting in 10 minutes: announcement, then a single reminder.
+
+        Both the announcement and the reminder are rich embeds; the reminder
+        embed footer carries the \"Reminder\" marker and a local-time timestamp.
+        """
         events = [_event_dict("456", starts_in_minutes=10)]
         sends = await self._poll_with_restart(events, times=3)
 
@@ -143,10 +149,11 @@ class VatsimEventsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(sends[1]), 1)
         self.assertEqual(len(sends[2]), 0)
 
-        # Announcement is an embed; reminder is a plain text message.
+        # Announcement is an embed; the reminder is ALSO an embed now.
         self.assertIn("embed", sends[0][0].kwargs)
-        self.assertNotIn("embed", sends[1][0].kwargs)
-        self.assertIn("Reminder", str(sends[1][0].args))
+        self.assertIn("embed", sends[1][0].kwargs)
+        reminder_footer = sends[1][0].kwargs["embed"].footer.text
+        self.assertIn("Reminder", reminder_footer)
 
         db = await get_db()
         cur = await db.execute("SELECT posted, reminded FROM vatsim_events WHERE event_id='456'")
@@ -204,8 +211,8 @@ class VatsimEventsTests(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_far_future_event_tracked_but_not_announced(self):
-        """90 minutes out (outside the 60-min window): tracked, no post yet."""
-        events = [_event_dict("555", starts_in_minutes=90)]
+        """150 minutes out (outside the 90-min window): tracked, no post yet."""
+        events = [_event_dict("555", starts_in_minutes=150)]
         sends = await self._poll_with_restart(events, times=1)
         self.assertEqual(len(sends[0]), 0)
 
@@ -218,14 +225,15 @@ class VatsimEventsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(row["reminded"], 0)
 
     async def test_announce_window_boundary(self):
-        """A 90-min event announces once the announce window is widened."""
-        events = [_event_dict("666", starts_in_minutes=90)]
-        # Default 60-min window: nothing posted.
+        """A 150-min event is silent at the default 90-min window and only
+        announces once the announce window is widened past 150 minutes."""
+        events = [_event_dict("666", starts_in_minutes=150)]
+        # Default 90-min window: nothing posted.
         sends = await self._poll_with_restart(events, times=1)
         self.assertEqual(len(sends[0]), 0)
 
-        # Widen the window past 90 min: the same event now announces.
-        with mock.patch("bot.cogs.vatsim_events.ANNOUNCE_MINUTES_DEFAULT", 120):
+        # Widen the window past 150 min: the same event now announces.
+        with mock.patch("bot.cogs.vatsim_events.ANNOUNCE_MINUTES_DEFAULT", 180):
             sends = await self._poll_with_restart(events, times=1)
         self.assertEqual(len(sends[0]), 1)
         self.assertIn("embed", sends[0][0].kwargs)

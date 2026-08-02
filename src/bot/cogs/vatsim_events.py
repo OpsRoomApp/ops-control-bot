@@ -1,8 +1,18 @@
 """
-OPS CONTROL - VATSIM Event Reminders (v0.25.55 / B3)
+OPS CONTROL - VATSIM Event Reminders (v0.25.58)
 
 Polls the VATSIM events API on a schedule, auto-posts new upcoming events
 to the configured events channel, and sends a reminder N minutes before start.
+
+Announcement (default 90 min before start):
+  Rich embed with the event title, full description, banner image, link,
+  airport route line and a Discord local-time timestamp footer so every
+  viewer sees the start time in their own timezone.
+
+Reminder (default 30 min before start):
+  Also a rich embed (never a plain-text message), carrying the same banner
+  image, link and local-time timestamp.
+
 Avoids duplicate posts by tracking posted/reminded in vatsim_events table.
 """
 
@@ -22,8 +32,13 @@ logger = logging.getLogger("ops_control.vatsim_events")
 
 VATSIM_EVENTS_URL = "https://my.vatsim.net/api/v2/events/latest"
 # Legacy payloads wrapped the list under "items"; v2 uses "data".
-ANNOUNCE_MINUTES_DEFAULT = 60
+ANNOUNCE_MINUTES_DEFAULT = 90
 REMINDER_MINUTES_DEFAULT = 30
+
+
+def _discord_timestamp(dt: datetime) -> str:
+    """Render a UTC datetime as a Discord local-time timestamp (viewer's TZ)."""
+    return f"<t:{int(dt.timestamp())}:f>"
 
 
 class VatsimEvents(commands.Cog):
@@ -53,6 +68,72 @@ class VatsimEvents(commands.Cog):
 
     async def _wait_until_ready(self):
         await self.bot.wait_until_ready()
+
+    @staticmethod
+    def _parse_event_times(event: dict) -> tuple[datetime | None, datetime | None]:
+        """Return (start_time, end_time) aware datetimes, or (None, None)."""
+        start_str = str(event.get("start_time") or "")
+        end_str = str(event.get("end_time") or "")
+        start_time = None
+        end_time = None
+        try:
+            if start_str:
+                start_time = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+        except ValueError:
+            start_time = None
+        try:
+            if end_str:
+                end_time = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
+        except ValueError:
+            end_time = None
+        return start_time, end_time
+
+    @staticmethod
+    def _event_airports(event: dict) -> list[str]:
+        airports = [
+            str(a.get("icao") or "").strip().upper()
+            for a in (event.get("airports") or [])
+            if isinstance(a, dict)
+        ]
+        return [a for a in airports if a]
+
+    def _build_embed(
+        self,
+        event: dict,
+        title: str,
+        start_time: datetime,
+        end_time: datetime | None,
+        *,
+        footer: str,
+        include_banner: bool = True,
+    ) -> discord.Embed:
+        """Build the event embed (title, description, banner, link, footer)."""
+        link = str(event.get("link") or "")
+        banner = str(event.get("banner") or "").strip()
+        short_desc = str(event.get("short_description") or "").strip()
+        full_desc = str(event.get("description") or "").strip()
+        airports = self._event_airports(event)
+
+        desc = f"**Starts:** {_discord_timestamp(start_time)}\n"
+        if end_time:
+            desc += f"**Ends:** {_discord_timestamp(end_time)}\n"
+        if airports:
+            desc += f"**Airports:** {' » '.join(airports)}\n"
+        # Prefer the full description, fall back to the short description.
+        body = full_desc or short_desc
+        if body:
+            desc += f"\n{body}"
+
+        embed = discord.Embed(
+            title=title,
+            description=desc,
+            url=link or None,
+            color=discord.Color.blue(),
+        )
+        if include_banner and banner:
+            embed.set_image(url=banner)
+        embed.set_footer(text=footer)
+        return embed
 
     async def _poll_vatsim_events(self):
         try:
@@ -99,23 +180,13 @@ class VatsimEvents(commands.Cog):
                 continue
             event_id = str(event.get("id") or "")
             title = str(event.get("name") or event.get("title") or "VATSIM Event")
-            start_str = str(event.get("start_time") or "")
-            end_str = str(event.get("end_time") or "")
 
-            if not event_id or not start_str:
+            if not event_id:
                 continue
 
-            try:
-                start_time = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
-            except ValueError:
+            start_time, end_time = self._parse_event_times(event)
+            if start_time is None:
                 continue
-
-            end_time = None
-            try:
-                if end_str:
-                    end_time = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
-            except ValueError:
-                pass
 
             # Skip events that already ended or already started.
             if end_time and end_time < now:
@@ -145,33 +216,12 @@ class VatsimEvents(commands.Cog):
             # Announcement: only once the event is inside the announce window.
             if not row["posted"]:
                 if timedelta(0) < time_to_start <= timedelta(minutes=announce_minutes):
-                    link = str(event.get("link") or "")
-                    banner = str(event.get("banner") or "").strip()
-                    short_desc = str(event.get("short_description") or "").strip()
-                    airports = [
-                        str(a.get("icao") or "").strip().upper()
-                        for a in (event.get("airports") or [])
-                        if isinstance(a, dict)
-                    ]
-                    airports = [a for a in airports if a]
-
-                    desc = f"**Starts:** {start_time.strftime('%Y-%m-%d %H:%M')} UTC\n"
-                    if end_time:
-                        desc += f"**Ends:** {end_time.strftime('%Y-%m-%d %H:%M')} UTC\n"
-                    if airports:
-                        desc += f"**Airports:** {' » '.join(airports)}\n"
-                    if short_desc:
-                        desc += f"\n{short_desc}"
-                    embed = discord.Embed(
-                        title=title,
-                        description=desc,
-                        url=link or None,
-                        color=discord.Color.blue(),
-                    )
-                    if banner:
-                        embed.set_image(url=banner)
-                    embed.set_footer(
-                        text=f"Starting time \u27a1 \u2022 {start_time.strftime('%A, %d %b %Y %H:%M')} UTC"
+                    embed = self._build_embed(
+                        event,
+                        title,
+                        start_time,
+                        end_time,
+                        footer=f"Starting time \u27a1 \u2022 {_discord_timestamp(start_time)}",
                     )
                     try:
                         await channel.send(embed=embed)
@@ -189,12 +239,19 @@ class VatsimEvents(commands.Cog):
             if row["reminded"]:
                 continue
             if timedelta(0) < time_to_start <= timedelta(minutes=reminder_minutes):
+                embed = self._build_embed(
+                    event,
+                    title,
+                    start_time,
+                    end_time,
+                    footer=(
+                        f"Reminder \u2022 Starting in "
+                        f"{time_to_start.total_seconds() // 60:.0f} min \u2022 "
+                        f"{_discord_timestamp(start_time)}"
+                    ),
+                )
                 try:
-                    await channel.send(
-                        f"**Reminder: {title} starts in "
-                        f"{time_to_start.total_seconds() // 60:.0f} minutes at "
-                        f"{start_time.strftime('%H:%M')} UTC!**"
-                    )
+                    await channel.send(embed=embed)
                 except discord.Forbidden:
                     pass
                 else:

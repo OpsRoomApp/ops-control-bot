@@ -28,6 +28,7 @@ class RouteProvider(ABC):
         duration_input: str,
         origin: str | None = None,
         destination: str | None = None,
+        filters: dict | None = None,
     ) -> RouteResult:
         """Generate a route matching the requested aircraft and duration.
 

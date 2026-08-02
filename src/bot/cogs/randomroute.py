@@ -33,6 +33,7 @@ from bot.services.routes import (
     NoRouteFound,
     generate_route,
 )
+from bot.services.routes.where2fly import parse_filters
 from bot.services.simbrief_url import (
     build_simbrief_options_url,
     resolve_static_id,
@@ -70,6 +71,13 @@ class RouteModal(discord.ui.Modal, title="Random Flight Suggestion"):
         max_length=4,
         min_length=0,
     )
+    filters = discord.ui.TextInput(
+        label="Optional Filters",
+        placeholder="-windy +atc ifr rwy>6000 size=medium,large region=EU",
+        required=False,
+        max_length=200,
+        min_length=0,
+    )
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
@@ -78,10 +86,12 @@ class RouteModal(discord.ui.Modal, title="Random Flight Suggestion"):
         duration_input = self.duration.value.strip()
         origin_input = self.origin.value.strip() or None
         dest_input = self.destination.value.strip() or None
+        filters = parse_filters(self.filters.value or "")
 
         try:
             route = await generate_route(
-                aircraft_input, duration_input, origin_input, dest_input
+                aircraft_input, duration_input, origin_input, dest_input,
+                filters=filters,
             )
         except InvalidAircraft as exc:
             await interaction.followup.send(

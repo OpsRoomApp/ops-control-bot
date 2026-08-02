@@ -312,7 +312,9 @@ class FallbackProvider(RouteProvider):
         duration_input: str,
         origin: str | None = None,
         destination: str | None = None,
+        filters: dict | None = None,
     ) -> RouteResult:
+        # filters (Where2Fly API params) are not applicable to the local engine.
         codeletter, basetype, canonical_code, display_name = resolve_aircraft(aircraft_input)
         duration_hours = parse_duration(duration_input)
 

@@ -41,6 +41,7 @@ async def generate_route(
     duration_input: str,
     origin: str | None = None,
     destination: str | None = None,
+    filters: dict | None = None,
 ) -> RouteResult:
     """Generate a route using the best available provider.
 
@@ -57,7 +58,7 @@ async def generate_route(
 
     if primary is not None:
         try:
-            result = await primary.generate(aircraft_input, duration_input, origin, destination)
+            result = await primary.generate(aircraft_input, duration_input, origin, destination, filters=filters)
             logger.info(
                 "Route generated via %s: %s -> %s (%s)",
                 primary.name, result.origin, result.destination, result.estimated_time,
@@ -76,7 +77,7 @@ async def generate_route(
         logger.info("Where2Fly disabled or no token — using local fallback database")
 
     try:
-        result = await fallback.generate(aircraft_input, duration_input, origin, destination)
+        result = await fallback.generate(aircraft_input, duration_input, origin, destination, filters=filters)
         logger.info(
             "Route generated via %s: %s -> %s (%s)",
             fallback.name, result.origin, result.destination, result.estimated_time,
