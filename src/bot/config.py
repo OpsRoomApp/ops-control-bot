@@ -153,6 +153,16 @@ class Config:
         default_factory=lambda: _env_int("VATSIM_EVENTS_CHANNEL_ID", 0)
     )
 
+    # -- VATSIM flight tracker (auto takeoff/landing posts) --
+    vatsim_tracker_channel_id: int = field(
+        default_factory=lambda: _env_int(
+            "VATSIM_TRACKER_CHANNEL_ID", 1533447716359639131
+        )
+    )
+    vatsim_tracker_poll_seconds: int = field(
+        default_factory=lambda: _env_int("VATSIM_TRACKER_POLL_SECONDS", 60)
+    )
+
     # -- Admin API integration (B1 hosted transcripts, C4 appeals) --
     admin_api_base_url: str = field(
         default_factory=lambda: _env_str(

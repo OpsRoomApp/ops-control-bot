@@ -129,13 +129,26 @@ class SimBriefCog(commands.Cog):
             )
             return
 
+        aircraft_label = plan["aircraft"]
+        if plan.get("aircraft_name") and plan["aircraft_name"] != "N/A":
+            aircraft_label = f"{plan['aircraft_name']} ({plan['aircraft']})"
+
+        route_label = f"{plan['origin']} - {plan['destination']}"
+        origin_name = plan.get("origin_name") or ""
+        destination_name = plan.get("destination_name") or ""
+        if origin_name not in ("", "N/A") or destination_name not in ("", "N/A"):
+            route_label = (
+                f"{plan['origin']} {origin_name} \n→ {plan['destination']} {destination_name}"
+            ).replace("  ", " ").replace(" N/A", "")
+
         embed = discord.Embed(
             title=f"SimBrief OFP -- {plan['callsign']}",
             color=0xEA580C,
             timestamp=discord.utils.utcnow(),
         )
-        embed.add_field(name="Aircraft", value=plan["aircraft"], inline=True)
-        embed.add_field(name="Route", value=f"{plan['origin']} - {plan['destination']}", inline=True)
+        embed.add_field(name="Aircraft", value=aircraft_label, inline=True)
+        embed.add_field(name="Registration", value=plan.get("registration", "N/A"), inline=True)
+        embed.add_field(name="Route", value=route_label, inline=True)
         embed.add_field(name="Distance", value=f"{plan['distance']} NM", inline=True)
         embed.add_field(name="Cruise Level", value=plan["cruise_altitude"], inline=True)
         embed.add_field(name="Block Time", value=plan.get("block_time", "N/A"), inline=True)

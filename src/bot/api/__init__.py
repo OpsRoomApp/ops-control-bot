@@ -78,22 +78,48 @@ async def fetch_vatsim_flight(callsign: str) -> dict[str, Any] | None:
     pilots = data.get("pilots", [])
     for pilot in pilots:
         if pilot.get("callsign", "").strip().upper() == callsign.strip().upper():
-            plan = pilot.get("flight_plan") or {}
-            return {
-                "callsign": pilot.get("callsign", "N/A"),
-                "name": pilot.get("name", "N/A"),
-                "latitude": pilot.get("latitude"),
-                "longitude": pilot.get("longitude"),
-                "altitude": pilot.get("altitude"),
-                "groundspeed": pilot.get("groundspeed"),
-                "heading": pilot.get("heading"),
-                "departure": plan.get("departure", "N/A"),
-                "arrival": plan.get("arrival", "N/A"),
-                "route": plan.get("route", "N/A"),
-                "aircraft": plan.get("aircraft", "N/A"),
-                "cruise_altitude": plan.get("altitude", "N/A"),
-            }
+            return _pilot_summary(pilot)
     return None
+
+
+async def fetch_vatsim_pilots_by_cids(cids: set[str]) -> dict[str, dict[str, Any]]:
+    """Fetch VATSIM data once and index pilots by CID (string form).
+
+    Used by the auto takeoff/landing tracker so a single feed fetch serves
+    every linked user on a poll cycle.
+    """
+    data = await fetch_vatsim_data()
+    pilots = data.get("pilots", [])
+    out: dict[str, dict[str, Any]] = {}
+    for pilot in pilots:
+        cid = str(pilot.get("cid", "")).strip()
+        if cid and cid in cids:
+            out[cid] = _pilot_summary(pilot)
+    return out
+
+
+def _pilot_summary(pilot: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a raw VATSIM pilot record into the bot's flight-watch shape."""
+    plan = pilot.get("flight_plan") or {}
+    return {
+        "callsign": pilot.get("callsign", "N/A"),
+        "name": pilot.get("name", "N/A"),
+        "cid": pilot.get("cid"),
+        "latitude": pilot.get("latitude"),
+        "longitude": pilot.get("longitude"),
+        "altitude": pilot.get("altitude"),
+        "groundspeed": pilot.get("groundspeed"),
+        "heading": pilot.get("heading"),
+        "on_ground": bool(
+            pilot.get("on_ground")
+            or (pilot.get("groundspeed") in (0, None) and pilot.get("altitude") in (0, None))
+        ),
+        "departure": plan.get("departure", "N/A"),
+        "arrival": plan.get("arrival", "N/A"),
+        "route": plan.get("route", "N/A"),
+        "aircraft": plan.get("aircraft", "N/A"),
+        "cruise_altitude": plan.get("altitude", "N/A"),
+    }
 
 
 async def fetch_vatsim_atis(icao: str) -> dict[str, Any] | None:
@@ -160,22 +186,164 @@ async def fetch_opensky_states(icao24: str | None = None) -> list[dict[str, Any]
 SIMBRIEF_API_URL = "https://www.simbrief.com/api/xml.fetcher.php"
 
 
+def parse_simbrief_payload(data: dict[str, Any]) -> dict[str, Any] | None:
+    """Parse the SimBrief XML fetcher JSON response into the bot's plan shape.
+
+    The fetcher returns the OFP sections as *top-level* siblings of a small
+    ``params`` metadata block:
+
+        fetch       -> {status, fetched, message, ...}
+        params      -> metadata (time_generated, request_id, sequence_id, units)
+        general     -> airline, flight_number, callsign, initial_altitude,
+                       air_distance, gc_distance, block_time, route, ...
+        origin      -> icao_code, iata_code, name
+        destination -> icao_code, iata_code, name
+        aircraft    -> icaocode, name, reg
+        times       -> sched_out, sched_off, est_time_enroute, ...
+        fuel        -> plan_ramp, plan_takeoff, ...
+        files/links -> pdf / ofp links
+
+    Returns None when the API reports "no flight plan" for the account.
+    """
+    if not isinstance(data, dict):
+        return None
+
+    fetch = data.get("fetch") if isinstance(data.get("fetch"), dict) else {}
+    fetch_status = str(fetch.get("status") or "").strip().lower()
+    fetched = fetch.get("fetched")
+    if fetch_status and fetch_status not in {"success", "ok"}:
+        message = str(fetch.get("message") or fetch.get("error") or "").lower()
+        if fetched == 0 or "no flight plan" in message or "does not exist" in message:
+            return None
+        raise RuntimeError(
+            str(fetch.get("message") or fetch.get("error") or "SimBrief could not return the latest OFP")
+        )
+
+    general = data.get("general") if isinstance(data.get("general"), dict) else {}
+    origin = data.get("origin") if isinstance(data.get("origin"), dict) else {}
+    dest = data.get("destination") if isinstance(data.get("destination"), dict) else {}
+    aircraft = data.get("aircraft") if isinstance(data.get("aircraft"), dict) else {}
+    times = data.get("times") if isinstance(data.get("times"), dict) else {}
+    fuel = data.get("fuel") if isinstance(data.get("fuel"), dict) else {}
+    links = data.get("links") if isinstance(data.get("links"), dict) else {}
+    files = data.get("files") if isinstance(data.get("files"), dict) else {}
+    atc = data.get("atc") if isinstance(data.get("atc"), dict) else {}
+
+    def _text(value: Any, default: str = "") -> str:
+        if value is None:
+            return default
+        return str(value).strip()
+
+    def _first(*values: Any, default: str = "") -> str:
+        for value in values:
+            text = _text(value)
+            if text:
+                return text
+        return default
+
+    airline = _first(general.get("icao_airline"), general.get("airline")).upper()
+    flight_number = _first(general.get("flight_number"), general.get("fltnum")).upper()
+    callsign = _first(
+        atc.get("callsign"),
+        general.get("atc_callsign"),
+        general.get("callsign"),
+    ).upper()
+    if not callsign:
+        callsign = f"{airline}{flight_number}".strip()
+
+    origin_code = _first(origin.get("icao_code"), origin.get("icao"), default="???")
+    dest_code = _first(dest.get("icao_code"), dest.get("icao"), default="???")
+    aircraft_code = _first(
+        aircraft.get("icaocode"),
+        aircraft.get("icao_code"),
+        general.get("icao_aircraft"),
+        general.get("type"),
+        default="N/A",
+    ).upper()
+    aircraft_name = _text(aircraft.get("name"))
+    registration = _first(aircraft.get("reg"), aircraft.get("registration")).upper()
+
+    route = _first(general.get("route"), general.get("route_ifps"), data.get("route"), default="N/A")
+    cruise = _first(
+        general.get("initial_altitude"),
+        general.get("cruise_altitude"),
+        default="N/A",
+    )
+    distance = _first(
+        general.get("air_distance"),
+        general.get("gc_distance"),
+        general.get("distance"),
+        default="N/A",
+    )
+    air_time = _first(
+        times.get("est_time_enroute"),
+        times.get("ete"),
+        general.get("ete"),
+        default="N/A",
+    )
+    block_time = _first(
+        general.get("block_time"),
+        times.get("sched_block"),
+        times.get("block_time"),
+        default="N/A",
+    )
+    plan_fuel = _first(
+        fuel.get("plan_ramp"),
+        fuel.get("plan_takeoff"),
+        fuel.get("takeoff"),
+        default="N/A",
+    )
+
+    ofp_link = ""
+    pdf = files.get("pdf") if isinstance(files.get("pdf"), dict) else {}
+    directory = _text(files.get("directory"))
+    pdf_link = _text(_first(pdf.get("link"), pdf.get("url")))
+    if pdf_link:
+        ofp_link = pdf_link if "http" in pdf_link.lower() else f"{directory.rstrip('/')}/{pdf_link}"
+    if not ofp_link:
+        ofp_link = _first(links.get("ofp"), links.get("pdf"), data.get("ofp_link"))
+
+    return {
+        "callsign": callsign or "N/A",
+        "aircraft": aircraft_code,
+        "aircraft_name": aircraft_name or "N/A",
+        "registration": registration or "N/A",
+        "aircraft_faa": _text(general.get("faa_aircraft")) or "N/A",
+        "origin": origin_code,
+        "origin_name": _text(origin.get("name")) or "N/A",
+        "destination": dest_code,
+        "destination_name": _text(dest.get("name")) or "N/A",
+        "route": route,
+        "cruise_altitude": cruise,
+        "distance": distance,
+        "air_time": air_time,
+        "plan_fuel": plan_fuel,
+        "ete": air_time,
+        "fuel": plan_fuel,
+        "block_time": block_time,
+        "loadsheet_time": _first(times.get("loadsheet_time"), general.get("loadsheet_time"), default="N/A"),
+        "ofp_link": ofp_link,
+    }
+
+
 async def fetch_simbrief_flightplan(username: str | None = None, static_id: str | None = None) -> dict[str, Any] | None:
     """Fetch a SimBrief flight plan via the public XML fetcher API.
 
-    No API key is required — the public XML fetcher endpoint works
-    with just the SimBrief username (userid) and optional static_id.
+    No API key is required — the public XML fetcher endpoint works with the
+    SimBrief pilot ID (digits) or username plus an optional static_id.
 
     Args:
-        username: SimBrief username / pilot ID.
+        username: SimBrief pilot ID (digits) or username.
         static_id: Optional static ID for persistent OFP links.
 
     Returns:
-        Parsed flight plan dict, or None if no plan found.
+        Parsed flight plan dict, or None if no plan found / account not
+        configured. Raises on network or API failures.
     """
     params: dict[str, str] = {"json": "1"}
     if username:
-        params["userid"] = username
+        key = "userid" if username.strip().isdigit() else "username"
+        params[key] = username.strip()
     if static_id:
         params["static_id"] = static_id
 
@@ -184,37 +352,11 @@ async def fetch_simbrief_flightplan(username: str | None = None, static_id: str 
         async with session.get(SIMBRIEF_API_URL, params=params) as resp:
             resp.raise_for_status()
             data: dict[str, Any] = await resp.json()
-
-        plan = data.get("params") or data
-
-        if not plan or plan.get("fetch_status") == "No flight plan found":
-            return None
-
-        origin = plan.get("origin", {})
-        dest = plan.get("destination", {})
-        return {
-            "callsign": plan.get("atc_callsign", "N/A"),
-            "aircraft": plan.get("icao_aircraft", "N/A"),
-            "aircraft_faa": plan.get("faa_aircraft", "N/A"),
-            "origin": origin.get("icao_code", "???") if isinstance(origin, dict) else "???",
-            "origin_name": origin.get("name", "") if isinstance(origin, dict) else "",
-            "destination": dest.get("icao_code", "???") if isinstance(dest, dict) else "???",
-            "destination_name": dest.get("name", "") if isinstance(dest, dict) else "",
-            "route": plan.get("route", "N/A"),
-            "cruise_altitude": plan.get("initial_altitude", "N/A"),
-            "distance": plan.get("distance", "N/A"),
-            "air_time": plan.get("air_time", "N/A"),
-            "plan_fuel": plan.get("plan_fuel", "N/A"),
-            "ete": plan.get("air_time", "N/A"),
-            "fuel": plan.get("plan_fuel", "N/A"),
-            "block_time": plan.get("block_time", "N/A"),
-            "loadsheet_time": plan.get("loadsheet_time", "N/A"),
-            "ofp_link": plan.get("link", ""),
-        }
-
     except Exception:
         logger.exception("SimBrief API request failed")
         raise
+
+    return parse_simbrief_payload(data) if isinstance(data, dict) else None
 
 
 # ---------------------------------------------------------------------------

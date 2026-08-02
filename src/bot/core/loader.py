@@ -43,6 +43,9 @@ _REQUIRED_COGS: list[str] = [
     "bot.cogs.moderation",
     # v0.25.55 (B3) -- VATSIM event reminders
     "bot.cogs.vatsim_events",
+    # v0.25.56 -- Community rules + VATSIM auto takeoff/landing tracker
+    "bot.cogs.rules",
+    "bot.cogs.vatsim_tracker",
 ]
 
 

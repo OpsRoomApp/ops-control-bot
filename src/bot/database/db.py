@@ -349,6 +349,25 @@ CREATE TABLE IF NOT EXISTS staff_allowlist (
     UNIQUE(provider, identifier)
 );
 
+-- v0.25.56 - VATSIM flight tracker links (auto takeoff/landing posts)
+CREATE TABLE IF NOT EXISTS vatsim_links (
+    discord_id  INTEGER PRIMARY KEY,
+    vatsim_cid  INTEGER NOT NULL,
+    created_at  TEXT    NOT NULL,
+    updated_at  TEXT
+);
+
+-- v0.25.56 - VATSIM tracker per-CID state (dedupe notifications across restarts)
+CREATE TABLE IF NOT EXISTS vatsim_tracking (
+    vatsim_cid  INTEGER PRIMARY KEY,
+    callsign    TEXT,
+    airborne    INTEGER NOT NULL DEFAULT 0,
+    departure   TEXT,
+    arrival     TEXT,
+    aircraft    TEXT,
+    last_seen   TEXT
+);
+
 """
 
 
