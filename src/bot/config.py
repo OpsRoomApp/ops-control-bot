@@ -147,6 +147,9 @@ class Config:
     public_beta_role_id: int = field(
         default_factory=lambda: _env_int("PUBLIC_BETA_ROLE_ID", 0)
     )
+    beta_coordinator_role_id: int = field(
+        default_factory=lambda: _env_int("BETA_COORDINATOR_ROLE_ID", 0)
+    )
 
     # -- VATSIM events (B3) --
     vatsim_events_channel_id: int = field(
