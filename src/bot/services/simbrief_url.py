@@ -47,12 +47,15 @@ def build_simbrief_options_url(
     Example minimum:
         https://dispatch.simbrief.com/options/custom?airline=DLH&fltnum=32D&orig=EDDF&dest=EGLL&basetype=A359
     """
+    def _norm(v: str | int | float | None) -> str:
+        return str(v or "").strip().upper()
+
     params: dict[str, str] = {
-        "airline": airline.strip().upper(),
-        "fltnum": str(fltnum).strip().upper(),
-        "orig": orig.strip().upper(),
-        "dest": dest.strip().upper(),
-        "basetype": basetype.strip().upper(),
+        "airline": _norm(airline),
+        "fltnum": _norm(fltnum),
+        "orig": _norm(orig),
+        "dest": _norm(dest),
+        "basetype": _norm(basetype),
     }
 
     optional: dict[str, str | None] = {

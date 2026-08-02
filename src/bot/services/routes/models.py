@@ -165,8 +165,10 @@ def resolve_aircraft(aircraft_input: str) -> tuple[str, str, str, str]:
     direct = AIRCRAFT_NORMALIZATION.get(clean)
     if direct:
         codeletter, basetype = direct
-        # canonical ICAO code = basetype if in the catalogue list else first member
-        codes = _code_details(codeletter)[2]
+        # canonical ICAO code = basetype if in the catalogue list else first member.
+        # Index [1] is the ICAO codes list (index [2] is the cruise-speed tuple —
+        # using it produced an int aircraft_code that crashed URL building).
+        codes = _code_details(codeletter)[1]
         canonical = basetype if basetype in codes else codes[0]
         return codeletter, basetype, canonical, _display_name(codeletter, basetype)
 

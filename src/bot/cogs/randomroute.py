@@ -131,46 +131,57 @@ class RouteModal(discord.ui.Modal, title="Random Flight Suggestion"):
             return
 
         # ---- Professional output embed ----
-        embed = discord.Embed(
-            title="Random Flight Suggestion",
-            color=0x0EA5E9,
-            timestamp=discord.utils.utcnow(),
-        )
-        for name, value in route.to_embed_fields():
-            embed.add_field(name=name, value=value, inline=True)
-
-        attribution = "Operational suggestion only — not a confirmed scheduled service."
-        if route.powered_by:
-            attribution = f"{route.powered_by} -- {route.route_source}"
-
-        embed.set_footer(text=attribution)
-
-        # ---- SimBrief button ----
-        static_id = resolve_static_id(
-            await self._linked_static_id(interaction.user.id),
-            config.simbrief_static_id,
-        )
-        url = build_simbrief_options_url(
-            airline=route.operator_icao or "OPS",
-            fltnum=route.flight_number_digits or "001",
-            orig=route.origin,
-            dest=route.destination,
-            basetype=route.aircraft_code,
-            callsign=route.callsign,
-            static_id=static_id,
-        )
-
-        view = discord.ui.View()
-        view.add_item(
-            discord.ui.Button(
-                label="Open in SimBrief",
-                style=discord.ButtonStyle.url,
-                url=url,
+        try:
+            embed = discord.Embed(
+                title="Random Flight Suggestion",
+                color=0x0EA5E9,
+                timestamp=discord.utils.utcnow(),
             )
-        )
-        view.add_item(GenerateAnotherButton())
+            for name, value in route.to_embed_fields():
+                embed.add_field(name=name, value=value, inline=True)
 
-        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            attribution = "Operational suggestion only — not a confirmed scheduled service."
+            if route.powered_by:
+                attribution = f"{route.powered_by} -- {route.route_source}"
+
+            embed.set_footer(text=attribution)
+
+            # ---- SimBrief button ----
+            static_id = resolve_static_id(
+                await self._linked_static_id(interaction.user.id),
+                config.simbrief_static_id,
+            )
+            url = build_simbrief_options_url(
+                airline=route.operator_icao or "OPS",
+                fltnum=route.flight_number_digits or "001",
+                orig=route.origin,
+                dest=route.destination,
+                basetype=route.aircraft_code,
+                callsign=route.callsign,
+                static_id=static_id,
+            )
+
+            view = discord.ui.View()
+            view.add_item(
+                discord.ui.Button(
+                    label="Open in SimBrief",
+                    style=discord.ButtonStyle.url,
+                    url=url,
+                )
+            )
+            view.add_item(GenerateAnotherButton())
+
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        except Exception:
+            logger.exception("Random route result rendering failed")
+            try:
+                await interaction.followup.send(
+                    "Route generated, but the result could not be rendered. "
+                    "Please try again or use a different aircraft/route.",
+                    ephemeral=True,
+                )
+            except Exception:
+                logger.exception("Failed to send error notice for random route")
 
         await log_event(
             "command",

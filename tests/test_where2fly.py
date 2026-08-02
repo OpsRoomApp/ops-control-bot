@@ -37,6 +37,7 @@ from bot.services.routes.models import (  # noqa: E402
     parse_duration,
     resolve_aircraft,
 )
+from bot.services.simbrief_url import build_simbrief_options_url  # noqa: E402
 from bot.services.routes.where2fly import (  # noqa: E402
     Where2FlyProvider,
     _airtime_range,
@@ -332,6 +333,38 @@ class OptionalFilterBodyTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("scores", body)
         self.assertNotIn("metcondition", body)
         self.assertIn("departure", body)
+
+
+class AircraftCodeRegressionTests(unittest.TestCase):
+    """Regression: aircraft_code must be a string ICAO code, never an int.
+
+    resolve_aircraft previously read the catalogue at index [2] (the
+    cruise-speed tuple, e.g. (430, 470)) instead of [1] (the ICAO codes
+    list), so A320 -> 430 (an int). The int crashed basetype.strip() in
+    build_simbrief_options_url after the interaction was deferred, killing
+    the /randomroute reply silently.
+    """
+
+    def test_aircraft_code_is_string_icao(self):
+        for inp in ("A320", "B738", "A359", "C172", "AT72", "B77W", "A20N"):
+            codeletter, basetype, canonical, name = resolve_aircraft(inp)
+            self.assertIsInstance(canonical, str, f"{inp} canonical -> {canonical!r}")
+            self.assertEqual(canonical.upper(), canonical)
+            self.assertTrue(1 <= len(canonical) <= 4)
+
+    def test_known_canonical_codes(self):
+        self.assertEqual(resolve_aircraft("A320")[2], "A320")
+        self.assertEqual(resolve_aircraft("B738")[2], "B738")
+        self.assertEqual(resolve_aircraft("A359")[2], "A359")
+
+    def test_simbrief_url_accepts_non_str_basetype(self):
+        # Defensive: even if a provider ever returns an int aircraft_code the
+        # URL builder must not crash.
+        url = build_simbrief_options_url(
+            airline="DLH", fltnum="400", orig="EDDF", dest="EGLL", basetype=430,
+        )
+        self.assertIn("basetype=430", url)
+        self.assertTrue(url.startswith("https://dispatch.simbrief.com/options/custom?"))
 
 
 if __name__ == "__main__":
