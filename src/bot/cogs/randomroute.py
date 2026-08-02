@@ -142,12 +142,19 @@ class RouteModal(discord.ui.Modal, title="Random Flight Suggestion"):
 
             attribution = "Operational suggestion only — not a confirmed scheduled service."
             if route.powered_by:
-                if route.powered_by_url:
-                    attribution = f"[{route.powered_by}]({route.powered_by_url}) -- {route.route_source}"
-                else:
-                    attribution = f"{route.powered_by} -- {route.route_source}"
+                attribution = f"{route.powered_by} -- {route.route_source}"
 
             embed.set_footer(text=attribution)
+
+            # Discord embed footers do NOT render Markdown links (only bold,
+            # italic, underline, strike, code). Field values DO render
+            # [text](url) as a blue clickable hyperlink.
+            if route.powered_by_url:
+                embed.add_field(
+                    name="Powered by",
+                    value=f"[{route.powered_by}]({route.powered_by_url})",
+                    inline=False,
+                )
 
             # ---- SimBrief button ----
             static_id = resolve_static_id(

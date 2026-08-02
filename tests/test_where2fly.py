@@ -374,34 +374,42 @@ if __name__ == "__main__":
 
 
 class FooterAttributionTests(unittest.TestCase):
-    """The embed footer attribution must be a clickable Markdown link when the
-    provider carries a powered_by_url (v0.25.58+).
+    """The Where2Fly attribution must be a clickable Markdown link.
 
-    Discord embed footers render `[text](url)` as a hyperlink. The render
-    block in randomroute.py builds the footer from route.powered_by /
-    route.powered_by_url; this test locks that format so it cannot regress
-    back to plain text.
+    Discord embed footers do NOT render Markdown links (only bold / italic /
+    underline / strike / code). The render block therefore keeps the footer
+    as plain text and puts the clickable `[Powered by Where2Fly](url)` in a
+    "Powered by" embed field value, where it renders as a blue hyperlink.
+    This test locks that format so it cannot regress.
     """
 
-    def _footer(self, powered_by, powered_by_url, route_source="Where2Fly"):
+    def _render(self, powered_by, powered_by_url, route_source="Where2Fly"):
+        """Mirror the render block in randomroute.py: returns (footer, field)."""
+        attribution = "Operational suggestion only \u2014 not a confirmed scheduled service."
         if powered_by:
-            if powered_by_url:
-                return f"[{powered_by}]({powered_by_url}) -- {route_source}"
-            return f"{powered_by} -- {route_source}"
-        return "Operational suggestion only \u2014 not a confirmed scheduled service."
+            attribution = f"{powered_by} -- {route_source}"
+        field = None
+        if powered_by_url:
+            field = (name := "Powered by", f"[{powered_by}]({powered_by_url})")
+        return attribution, field
 
-    def test_where2fly_footer_is_hyperlink(self):
-        footer = self._footer("Powered by Where2Fly", "https://where2fly.today")
-        self.assertEqual(footer, "[Powered by Where2Fly](https://where2fly.today) -- Where2Fly")
-        # Discord footer renders `[text](url)` as a clickable link.
-        self.assertIsNotNone(re.match(r"^\[[^]]+\]\(https?://[^)]+\)", footer))
+    def test_attribution_is_field_hyperlink(self):
+        footer, field = self._render("Powered by Where2Fly", "https://where2fly.today")
+        self.assertNotIn("[", footer)
+        self.assertIn("Powered by Where2Fly -- Where2Fly", footer)
+        # The clickable link must live in a field value, not the footer.
+        self.assertIsNotNone(field)
+        self.assertEqual(field[0], "Powered by")
+        self.assertEqual(field[1], "[Powered by Where2Fly](https://where2fly.today)")
+        self.assertIsNotNone(re.match(r"^\[[^]]+\]\(https?://[^)]+\)", field[1]))
 
     def test_footer_without_url_stays_plain_text(self):
-        footer = self._footer("Powered by Where2Fly", None)
+        footer, field = self._render("Powered by Where2Fly", None)
         self.assertEqual(footer, "Powered by Where2Fly -- Where2Fly")
-        self.assertNotIn("[", footer)
+        self.assertIsNone(field)
 
     def test_footer_without_powered_by_is_generic(self):
-        footer = self._footer(None, None)
+        footer, field = self._render(None, None)
         self.assertIn("Operational suggestion only", footer)
         self.assertNotIn("Where2Fly", footer)
+        self.assertIsNone(field)
