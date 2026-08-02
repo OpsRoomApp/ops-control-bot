@@ -4,8 +4,11 @@ v0.25.55 (B3) -- VATSIM events poller tests.
 Covers:
   * duplicate-post prevention: posting the same event twice (simulated bot
     restart with a fresh cog instance against the same DB) must not double-post
-  * reminder is sent at most once
-  * events far in the future are announced but not reminded early
+  * announcements fire only once the event is inside the announce window
+    (default 60 min before start)
+  * reminder is sent at most once, inside the reminder window (default 30 min)
+  * events already started are skipped entirely
+  * the announcement embed includes the event banner image
 """
 
 from __future__ import annotations
@@ -184,15 +187,67 @@ class VatsimEventsTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Join us tonight!", embed.description)
 
 
-    async def test_ongoing_event_never_reminds_negative(self):
-        """Started-but-not-ended event must not post a negative-minute reminder."""
+    async def test_ongoing_event_is_skipped_entirely(self):
+        """Started-but-not-ended event is skipped: no announcement, no reminder."""
         # Event started 45 minutes ago, ends in 75 minutes.
         ev = _event_dict_range("111", starts_in_minutes=-45, ends_in_minutes=75)
         sends = await self._poll_with_restart([ev], times=2)
-        # Poll 1 announces it (new event); poll 2 must NOT remind with a
-        # negative count -- only the single announcement may exist.
-        self.assertEqual(len(sends[0]), 1)
+        self.assertEqual(len(sends[0]), 0)
         self.assertEqual(len(sends[1]), 0)
+
+        db = await get_db()
+        cur = await db.execute(
+            "SELECT COUNT(*) AS n FROM vatsim_events WHERE event_id='111'"
+        )
+        row = await cur.fetchone()
+        self.assertEqual(row["n"], 0)
+
+
+    async def test_far_future_event_tracked_but_not_announced(self):
+        """90 minutes out (outside the 60-min window): tracked, no post yet."""
+        events = [_event_dict("555", starts_in_minutes=90)]
+        sends = await self._poll_with_restart(events, times=1)
+        self.assertEqual(len(sends[0]), 0)
+
+        db = await get_db()
+        cur = await db.execute(
+            "SELECT posted, reminded FROM vatsim_events WHERE event_id='555'"
+        )
+        row = await cur.fetchone()
+        self.assertEqual(row["posted"], 0)
+        self.assertEqual(row["reminded"], 0)
+
+    async def test_announce_window_boundary(self):
+        """A 90-min event announces once the announce window is widened."""
+        events = [_event_dict("666", starts_in_minutes=90)]
+        # Default 60-min window: nothing posted.
+        sends = await self._poll_with_restart(events, times=1)
+        self.assertEqual(len(sends[0]), 0)
+
+        # Widen the window past 90 min: the same event now announces.
+        with mock.patch("bot.cogs.vatsim_events.ANNOUNCE_MINUTES_DEFAULT", 120):
+            sends = await self._poll_with_restart(events, times=1)
+        self.assertEqual(len(sends[0]), 1)
+        self.assertIn("embed", sends[0][0].kwargs)
+
+    async def test_banner_image_is_embedded(self):
+        """Announcement embed uses the event banner image."""
+        ev = _event_dict("777", starts_in_minutes=30)
+        ev["banner"] = "https://vatsim.example/banners/test.png"
+        sends = await self._poll_with_restart([ev], times=1)
+        self.assertEqual(len(sends[0]), 1)
+        embed = sends[0][0].kwargs.get("embed")
+        self.assertIsNotNone(embed)
+        self.assertEqual(embed.image.url, "https://vatsim.example/banners/test.png")
+
+    async def test_airports_route_line_renders(self):
+        """Announcement description includes the event's airport route line."""
+        ev = _event_dict("778", starts_in_minutes=30)
+        ev["airports"] = [{"icao": "unnt"}, {"icao": "urww"}]
+        sends = await self._poll_with_restart([ev], times=1)
+        embed = sends[0][0].kwargs.get("embed")
+        self.assertIsNotNone(embed)
+        self.assertIn("UNNT » URWW", embed.description)
 
 
 if __name__ == "__main__":

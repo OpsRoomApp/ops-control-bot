@@ -152,6 +152,12 @@ class Config:
     vatsim_events_channel_id: int = field(
         default_factory=lambda: _env_int("VATSIM_EVENTS_CHANNEL_ID", 0)
     )
+    vatsim_events_announce_minutes: int = field(
+        default_factory=lambda: _env_int("VATSIM_EVENTS_ANNOUNCE_MINUTES", 60)
+    )
+    vatsim_events_reminder_minutes: int = field(
+        default_factory=lambda: _env_int("VATSIM_EVENTS_REMINDER_MINUTES", 30)
+    )
 
     # -- VATSIM flight tracker (auto takeoff/landing posts) --
     vatsim_tracker_channel_id: int = field(
