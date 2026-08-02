@@ -142,7 +142,10 @@ class RouteModal(discord.ui.Modal, title="Random Flight Suggestion"):
 
             attribution = "Operational suggestion only — not a confirmed scheduled service."
             if route.powered_by:
-                attribution = f"{route.powered_by} -- {route.route_source}"
+                if route.powered_by_url:
+                    attribution = f"[{route.powered_by}]({route.powered_by_url}) -- {route.route_source}"
+                else:
+                    attribution = f"{route.powered_by} -- {route.route_source}"
 
             embed.set_footer(text=attribution)
 

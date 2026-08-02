@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -369,3 +370,38 @@ class AircraftCodeRegressionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
+class FooterAttributionTests(unittest.TestCase):
+    """The embed footer attribution must be a clickable Markdown link when the
+    provider carries a powered_by_url (v0.25.58+).
+
+    Discord embed footers render `[text](url)` as a hyperlink. The render
+    block in randomroute.py builds the footer from route.powered_by /
+    route.powered_by_url; this test locks that format so it cannot regress
+    back to plain text.
+    """
+
+    def _footer(self, powered_by, powered_by_url, route_source="Where2Fly"):
+        if powered_by:
+            if powered_by_url:
+                return f"[{powered_by}]({powered_by_url}) -- {route_source}"
+            return f"{powered_by} -- {route_source}"
+        return "Operational suggestion only \u2014 not a confirmed scheduled service."
+
+    def test_where2fly_footer_is_hyperlink(self):
+        footer = self._footer("Powered by Where2Fly", "https://where2fly.today")
+        self.assertEqual(footer, "[Powered by Where2Fly](https://where2fly.today) -- Where2Fly")
+        # Discord footer renders `[text](url)` as a clickable link.
+        self.assertIsNotNone(re.match(r"^\[[^]]+\]\(https?://[^)]+\)", footer))
+
+    def test_footer_without_url_stays_plain_text(self):
+        footer = self._footer("Powered by Where2Fly", None)
+        self.assertEqual(footer, "Powered by Where2Fly -- Where2Fly")
+        self.assertNotIn("[", footer)
+
+    def test_footer_without_powered_by_is_generic(self):
+        footer = self._footer(None, None)
+        self.assertIn("Operational suggestion only", footer)
+        self.assertNotIn("Where2Fly", footer)
