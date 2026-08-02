@@ -20,7 +20,8 @@ from bot.database import get_db
 
 logger = logging.getLogger("ops_control.vatsim_events")
 
-VATSIM_EVENTS_URL = "https://my.vatsim.net/api/v2/events/division"
+VATSIM_EVENTS_URL = "https://my.vatsim.net/api/v2/events/latest"
+# Legacy payloads wrapped the list under "items"; v2 uses "data".
 REMINDER_MINUTES_DEFAULT = 30
 
 
@@ -37,8 +38,10 @@ class VatsimEvents(commands.Cog):
         if not config.vatsim_events_channel_id:
             logger.info("VATSIM_EVENTS_CHANNEL_ID not set - event reminders disabled")
             return
-        # Poll every 15 minutes
+        # Poll every 15 minutes. Only start after the guild/channel cache is
+        # populated so the first poll can resolve the events channel.
         self._poll_task = tasks.loop(minutes=15)(self._poll_vatsim_events)
+        self._poll_task.before_loop(self._wait_until_ready)
         self._poll_task.start()
 
     async def cog_unload(self):
@@ -47,19 +50,34 @@ class VatsimEvents(commands.Cog):
         if self._session:
             await self._session.close()
 
+    async def _wait_until_ready(self):
+        await self.bot.wait_until_ready()
+
     async def _poll_vatsim_events(self):
         try:
             async with self._session.get(VATSIM_EVENTS_URL, timeout=15.0) as resp:
                 if resp.status != 200:
+                    logger.warning(
+                        "VATSIM events API returned HTTP %s (url=%s)",
+                        resp.status,
+                        VATSIM_EVENTS_URL,
+                    )
                     return
                 data = await resp.json()
         except Exception:
             logger.exception("VATSIM events API poll failed")
             return
 
-        events = data.get("items") if isinstance(data, dict) else data
-        if not events or not isinstance(events, list):
+        if isinstance(data, dict):
+            if "data" in data:
+                events = data["data"]
+            else:
+                events = data.get("items") or []
+        else:
+            events = data
+        if not isinstance(events, list) or not events:
             return
+        logger.info("VATSIM events poll: %d event(s) fetched", len(events))
 
         channel = self.bot.get_channel(config.vatsim_events_channel_id)
         if not channel or not isinstance(channel, discord.TextChannel):
@@ -112,10 +130,17 @@ class VatsimEvents(commands.Cog):
                 )
                 await db.commit()
 
+                link = str(event.get("link") or "")
+                short_desc = str(event.get("short_description") or "").strip()
+                desc = f"**Starts:** {start_time.strftime('%Y-%m-%d %H:%M')} UTC\n"
+                if end_time:
+                    desc += f"**Ends:** {end_time.strftime('%Y-%m-%d %H:%M')} UTC\n"
+                if short_desc:
+                    desc += f"\n{short_desc}"
                 embed = discord.Embed(
                     title=title,
-                    description=f"**Starts:** {start_time.strftime('%Y-%m-%d %H:%M')} UTC\n"
-                    + (f"**Ends:** {end_time.strftime('%Y-%m-%d %H:%M')} UTC" if end_time else ""),
+                    description=desc,
+                    url=link or None,
                     color=discord.Color.blue(),
                 )
                 try:
@@ -129,7 +154,8 @@ class VatsimEvents(commands.Cog):
                 continue
 
             reminder_minutes = REMINDER_MINUTES_DEFAULT
-            if (start_time - now) <= timedelta(minutes=reminder_minutes):
+            time_to_start = start_time - now
+            if timedelta(0) < time_to_start <= timedelta(minutes=reminder_minutes):
                 await db.execute(
                     "UPDATE vatsim_events SET reminded=1 WHERE event_id=?",
                     (event_id,),
@@ -138,7 +164,7 @@ class VatsimEvents(commands.Cog):
                 try:
                     await channel.send(
                         f"**Reminder: {title} starts in "
-                        f"{(start_time - now).seconds // 60} minutes at "
+                        f"{(start_time - now).total_seconds() // 60:.0f} minutes at "
                         f"{start_time.strftime('%H:%M')} UTC!**"
                     )
                 except discord.Forbidden:

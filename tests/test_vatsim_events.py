@@ -39,10 +39,11 @@ CHANNEL_ID = 999
 
 
 class FakeResp:
-    status = 200
 
-    def __init__(self, events: list[dict]):
+    def __init__(self, events: list[dict], key: str = "data", status: int = 200):
+        self.status = status
         self._events = events
+        self._key = key
 
     async def __aenter__(self):
         return self
@@ -51,17 +52,19 @@ class FakeResp:
         return False
 
     async def json(self):
-        return {"items": self._events}
+        return {self._key: self._events}
 
 
 class FakeSession:
-    def __init__(self, events: list[dict]):
+    def __init__(self, events: list[dict], key: str = "data", status: int = 200):
         self._events = events
+        self._key = key
+        self._status = status
         self.calls = 0
 
     def get(self, url, **kwargs):
         self.calls += 1
-        return FakeResp(self._events)
+        return FakeResp(self._events, self._key, self._status)
 
 
 class FakeBot:
@@ -72,14 +75,19 @@ class FakeBot:
         return self.channel if channel_id == CHANNEL_ID else None
 
 
-def _event_dict(event_id: str, starts_in_minutes: int) -> dict:
+def _event_dict_range(event_id: str, starts_in_minutes: int,
+                       ends_in_minutes: int = 120) -> dict:
     now = datetime.now(timezone.utc)
     return {
         "id": event_id,
         "name": f"Test Event {event_id}",
         "start_time": (now + timedelta(minutes=starts_in_minutes)).isoformat(),
-        "end_time": (now + timedelta(hours=2)).isoformat(),
+        "end_time": (now + timedelta(minutes=ends_in_minutes)).isoformat(),
     }
+
+
+def _event_dict(event_id: str, starts_in_minutes: int) -> dict:
+    return _event_dict_range(event_id, starts_in_minutes, 120)
 
 
 class VatsimEventsTests(unittest.IsolatedAsyncioTestCase):
@@ -89,7 +97,8 @@ class VatsimEventsTests(unittest.IsolatedAsyncioTestCase):
         await db.execute("DELETE FROM vatsim_events")
         await db.commit()
 
-    async def _poll_with_restart(self, events: list[dict], times: int):
+    async def _poll_with_restart(self, events: list[dict], times: int,
+                                    key: str = "data", status: int = 200):
         """Simulate `times` poll runs, each with a fresh cog (i.e. a restart)."""
         sends = []
         for _ in range(times):
@@ -97,7 +106,7 @@ class VatsimEventsTests(unittest.IsolatedAsyncioTestCase):
             channel.send = mock.AsyncMock(return_value=mock.Mock(id=1))
             bot = FakeBot(channel)
             cog = VatsimEvents(bot)
-            cog._session = FakeSession(events)
+            cog._session = FakeSession(events, key, status)
             with mock.patch("bot.cogs.vatsim_events.config",
                             SimpleNamespace(vatsim_events_channel_id=CHANNEL_ID)):
                 await cog._poll_vatsim_events()
@@ -147,6 +156,43 @@ class VatsimEventsTests(unittest.IsolatedAsyncioTestCase):
         sends = await self._poll_with_restart(events, times=4)
         # Only polls 1 (announcement) and 2 (reminder) produced output.
         self.assertEqual([len(c) for c in sends], [1, 1, 0, 0])
+
+
+    async def test_legacy_items_wrapper_still_works(self):
+        """Backwards compatibility: legacy {"items": [...]} payload still posts."""
+        events = [_event_dict("321", starts_in_minutes=60)]
+        sends = await self._poll_with_restart(events, times=1, key="items")
+        self.assertEqual(len(sends[0]), 1)
+        self.assertIn("embed", sends[0][0].kwargs)
+
+    async def test_http_error_is_logged_not_fatal(self):
+        """HTTP 404 from the API must not crash the loop and must not post."""
+        events = [_event_dict("404", starts_in_minutes=30)]
+        sends = await self._poll_with_restart(events, times=1, status=404)
+        self.assertEqual(len(sends[0]), 0)
+
+    async def test_real_payload_fields_drive_embed(self):
+        """v2 payload includes link/short_description - embed uses them."""
+        now = datetime.now(timezone.utc)
+        ev = _event_dict("999", starts_in_minutes=60)
+        ev["link"] = "https://my.vatsim.net/events/sample"
+        ev["short_description"] = "Join us tonight!"
+        sends = await self._poll_with_restart([ev], times=1)
+        embed = sends[0][0].kwargs.get("embed")
+        self.assertIsNotNone(embed)
+        self.assertEqual(embed.url, "https://my.vatsim.net/events/sample")
+        self.assertIn("Join us tonight!", embed.description)
+
+
+    async def test_ongoing_event_never_reminds_negative(self):
+        """Started-but-not-ended event must not post a negative-minute reminder."""
+        # Event started 45 minutes ago, ends in 75 minutes.
+        ev = _event_dict_range("111", starts_in_minutes=-45, ends_in_minutes=75)
+        sends = await self._poll_with_restart([ev], times=2)
+        # Poll 1 announces it (new event); poll 2 must NOT remind with a
+        # negative count -- only the single announcement may exist.
+        self.assertEqual(len(sends[0]), 1)
+        self.assertEqual(len(sends[1]), 0)
 
 
 if __name__ == "__main__":
