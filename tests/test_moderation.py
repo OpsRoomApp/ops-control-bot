@@ -36,9 +36,26 @@ from bot.database import get_db, init_db  # noqa: E402
 class FakeResponse:
     def __init__(self):
         self.messages = []
+        self.deferred = False
 
     async def send_message(self, content=None, ephemeral=False, **kwargs):
         self.messages.append({"content": content, "ephemeral": ephemeral})
+
+    async def defer(self, ephemeral=False, **kwargs):
+        self.deferred = True
+
+    def is_done(self):
+        return self.deferred or bool(self.messages)
+
+
+class FakeFollowup:
+    """Minimal stand-in for interaction.followup (records into a shared sink)."""
+
+    def __init__(self, response: FakeResponse):
+        self._response = response
+
+    async def send(self, content=None, ephemeral=False, **kwargs):
+        self._response.messages.append({"content": content, "ephemeral": ephemeral})
 
 
 class FakeInteraction:
@@ -47,6 +64,7 @@ class FakeInteraction:
         self.guild = guild
         self.guild_id = guild.id
         self.response = FakeResponse()
+        self.followup = FakeFollowup(self.response)
 
 
 class FakeGuild:

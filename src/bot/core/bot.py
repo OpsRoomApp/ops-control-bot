@@ -183,6 +183,36 @@ class OpsControlBot(commands.Bot):
         """Global error handler for prefix commands (if any are ever added)."""
         logger.error("Command error from %s: %s", ctx.author, error)
 
+    async def on_app_command_error(
+        self,
+        interaction: discord.Interaction,
+        error: discord.app_commands.AppCommandError,
+    ) -> None:
+        """Global error handler for slash commands.
+
+        Ensures the interaction is always acknowledged, so users never see
+        "The application did not respond" when a command raises (e.g. a
+        permission error or API hiccup). Replies with a generic message and
+        logs the real error.
+        """
+        cmd = interaction.command.name if interaction.command else "?"
+        logger.error("Slash command /%s raised %s: %s", cmd, type(error).__name__, error)
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(
+                    "Something went wrong executing that command. The error has "
+                    "been logged; please try again.",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.response.send_message(
+                    "Something went wrong executing that command. The error has "
+                    "been logged; please try again.",
+                    ephemeral=True,
+                )
+        except discord.HTTPException:
+            logger.exception("Failed to send error response for /%s", cmd)
+
     async def on_error(self, event_method: str, /, *args: Any, **kwargs: Any) -> None:
         """Catch unhandled event-loop errors (e.g. on_member_join)."""
         logger.exception(

@@ -101,14 +101,21 @@ class Moderation(commands.Cog):
             return await interaction.response.send_message(
                 "Insufficient permissions.", ephemeral=True
             )
-        await self._log_action(interaction, "WARN", user, reason)
+        await interaction.response.defer(ephemeral=False)
         try:
-            await user.send(f"You have been warned in {interaction.guild.name}: {reason}")
-        except discord.Forbidden:
-            pass
-        await interaction.response.send_message(
-            f"Warned {user.mention}: {reason}", ephemeral=False
-        )
+            await self._log_action(interaction, "WARN", user, reason)
+            try:
+                await user.send(f"You have been warned in {interaction.guild.name}: {reason}")
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+            await interaction.followup.send(
+                f"Warned {user.mention}: {reason}", ephemeral=False
+            )
+        except discord.HTTPException as exc:
+            await interaction.followup.send(
+                f"Failed to record warning for {user.mention}: {exc}",
+                ephemeral=True,
+            )
 
     @app_commands.command(name="kick", description="Kick a user")
     @app_commands.describe(user="User to kick", reason="Reason for kicking")
@@ -119,15 +126,28 @@ class Moderation(commands.Cog):
             return await interaction.response.send_message(
                 "Insufficient permissions.", ephemeral=True
             )
+        await interaction.response.defer(ephemeral=False)
         try:
-            await user.send(f"You have been kicked from {interaction.guild.name}: {reason}")
+            try:
+                await user.send(f"You have been kicked from {interaction.guild.name}: {reason}")
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+            await user.kick(reason=reason)
+            await self._log_action(interaction, "KICK", user, reason)
+            await interaction.followup.send(
+                f"Kicked {user}: {reason}", ephemeral=False
+            )
         except discord.Forbidden:
-            pass
-        await user.kick(reason=reason)
-        await self._log_action(interaction, "KICK", user, reason)
-        await interaction.response.send_message(
-            f"Kicked {user}: {reason}", ephemeral=False
-        )
+            await interaction.followup.send(
+                f"Failed to kick {user}: the bot needs the **Kick Members** "
+                "permission and the target must be below the bot in the role "
+                "hierarchy.",
+                ephemeral=True,
+            )
+        except discord.HTTPException as exc:
+            await interaction.followup.send(
+                f"Failed to kick {user}: {exc}", ephemeral=True
+            )
 
     @app_commands.command(name="ban", description="Ban a user")
     @app_commands.describe(
@@ -146,22 +166,35 @@ class Moderation(commands.Cog):
             return await interaction.response.send_message(
                 "Insufficient permissions.", ephemeral=True
             )
-        days = max(0, min(7, int(delete_message_days)))
-        appeal_link = config.appeal_form_url or "https://opsroom.live/appeal"
-        dm_msg = (
-            f"You have been banned from {interaction.guild.name}.\n"
-            f"Reason: {reason}\n\n"
-            f"To appeal, visit: {appeal_link}"
-        )
+        await interaction.response.defer(ephemeral=False)
         try:
-            await user.send(dm_msg)
+            days = max(0, min(7, int(delete_message_days)))
+            appeal_link = config.appeal_form_url or "https://opsroom.live/appeal"
+            dm_msg = (
+                f"You have been banned from {interaction.guild.name}.\n"
+                f"Reason: {reason}\n\n"
+                f"To appeal, visit: {appeal_link}"
+            )
+            try:
+                await user.send(dm_msg)
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+            await user.ban(reason=reason, delete_message_days=days)
+            await self._log_action(interaction, "BAN", user, reason)
+            await interaction.followup.send(
+                f"Banned {user}: {reason}", ephemeral=False
+            )
         except discord.Forbidden:
-            pass
-        await user.ban(reason=reason, delete_message_days=days)
-        await self._log_action(interaction, "BAN", user, reason)
-        await interaction.response.send_message(
-            f"Banned {user}: {reason}", ephemeral=False
-        )
+            await interaction.followup.send(
+                f"Failed to ban {user}: the bot needs the **Ban Members** "
+                "permission and the target must be below the bot in the role "
+                "hierarchy.",
+                ephemeral=True,
+            )
+        except discord.HTTPException as exc:
+            await interaction.followup.send(
+                f"Failed to ban {user}: {exc}", ephemeral=True
+            )
 
     @app_commands.command(name="unban", description="Unban a user by ID")
     @app_commands.describe(user_id="Discord user ID to unban", reason="Reason for unbanning")
@@ -206,20 +239,35 @@ class Moderation(commands.Cog):
             return await interaction.response.send_message(
                 "Insufficient permissions.", ephemeral=True
             )
-        until = discord.utils.utcnow() + timedelta(minutes=max(1, min(40320, duration_minutes)))
-        await user.timeout(until, reason=reason)
-        await self._log_action(interaction, "TIMEOUT", user, reason, expires_at=until.isoformat())
+        # Acknowledge immediately: the API call, DB write and DM below can
+        # exceed Discord's 3-second interaction window.
+        await interaction.response.defer(ephemeral=False)
         try:
-            await user.send(
-                f"You have been timed out in {interaction.guild.name} "
-                f"for {duration_minutes} minutes: {reason}"
+            until = discord.utils.utcnow() + timedelta(minutes=max(1, min(40320, duration_minutes)))
+            await user.timeout(until, reason=reason)
+            await self._log_action(interaction, "TIMEOUT", user, reason, expires_at=until.isoformat())
+            try:
+                await user.send(
+                    f"You have been timed out in {interaction.guild.name} "
+                    f"for {duration_minutes} minutes: {reason}"
+                )
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+            await interaction.followup.send(
+                f"Timed out {user.mention} for {duration_minutes} min: {reason}",
+                ephemeral=False,
             )
         except discord.Forbidden:
-            pass
-        await interaction.response.send_message(
-            f"Timed out {user.mention} for {duration_minutes} min: {reason}",
-            ephemeral=False,
-        )
+            await interaction.followup.send(
+                f"Failed to timeout {user.mention}: the bot needs the "
+                "**Moderate Members** permission and the target must be below "
+                "the bot in the role hierarchy.",
+                ephemeral=True,
+            )
+        except discord.HTTPException as exc:
+            await interaction.followup.send(
+                f"Failed to timeout {user.mention}: {exc}", ephemeral=True
+            )
 
     @app_commands.command(name="untimeout", description="Remove a user's timeout")
     @app_commands.describe(user="User to remove timeout from")
@@ -230,11 +278,23 @@ class Moderation(commands.Cog):
             return await interaction.response.send_message(
                 "Insufficient permissions.", ephemeral=True
             )
-        await user.timeout(None, reason="Timeout removed by staff")
-        await self._log_action(interaction, "UNTIMEOUT", user, "Timeout removed")
-        await interaction.response.send_message(
-            f"Removed timeout from {user.mention}.", ephemeral=False
-        )
+        await interaction.response.defer(ephemeral=False)
+        try:
+            await user.timeout(None, reason="Timeout removed by staff")
+            await self._log_action(interaction, "UNTIMEOUT", user, "Timeout removed")
+            await interaction.followup.send(
+                f"Removed timeout from {user.mention}.", ephemeral=False
+            )
+        except discord.Forbidden:
+            await interaction.followup.send(
+                f"Failed to remove timeout from {user.mention}: the bot needs "
+                "the **Moderate Members** permission.",
+                ephemeral=True,
+            )
+        except discord.HTTPException as exc:
+            await interaction.followup.send(
+                f"Failed to remove timeout: {exc}", ephemeral=True
+            )
 
     @app_commands.command(name="mute", description="Role-based mute (supports permanent / long durations)")
     @app_commands.describe(
@@ -274,27 +334,40 @@ class Moderation(commands.Cog):
             return await interaction.response.send_message(
                 f"{user.mention} is already muted.", ephemeral=False
             )
-        await user.add_roles(role, reason=reason)
-        expires_at = None
-        if duration_minutes and duration_minutes > 0:
-            expires_at = (discord.utils.utcnow() + timedelta(minutes=duration_minutes)).isoformat()
-        await self._log_action(
-            interaction, "MUTE", user, reason, expires_at=expires_at
-        )
+        await interaction.response.defer(ephemeral=False)
         try:
-            duration_text = (
-                f"for {duration_minutes} minutes" if duration_minutes and duration_minutes > 0
-                else "permanently"
+            await user.add_roles(role, reason=reason)
+            expires_at = None
+            if duration_minutes and duration_minutes > 0:
+                expires_at = (discord.utils.utcnow() + timedelta(minutes=duration_minutes)).isoformat()
+            await self._log_action(
+                interaction, "MUTE", user, reason, expires_at=expires_at
             )
-            await user.send(
-                f"You have been muted {duration_text} in {interaction.guild.name}: {reason}"
+            try:
+                duration_text = (
+                    f"for {duration_minutes} minutes" if duration_minutes and duration_minutes > 0
+                    else "permanently"
+                )
+                await user.send(
+                    f"You have been muted {duration_text} in {interaction.guild.name}: {reason}"
+                )
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+            await interaction.followup.send(
+                f"Muted {user.mention} {('for ' + str(duration_minutes) + ' min') if duration_minutes and duration_minutes > 0 else 'permanently'}: {reason}",
+                ephemeral=False,
             )
         except discord.Forbidden:
-            pass
-        await interaction.response.send_message(
-            f"Muted {user.mention} {('for ' + str(duration_minutes) + ' min') if duration_minutes and duration_minutes > 0 else 'permanently'}: {reason}",
-            ephemeral=False,
-        )
+            await interaction.followup.send(
+                f"Failed to mute {user.mention}: the bot needs **Manage Roles** "
+                "permission and the target must be below the bot in the role "
+                "hierarchy.",
+                ephemeral=True,
+            )
+        except discord.HTTPException as exc:
+            await interaction.followup.send(
+                f"Failed to mute {user.mention}: {exc}", ephemeral=True
+            )
 
     @app_commands.command(name="unmute", description="Remove the Muted role from a user")
     @app_commands.describe(user="User to unmute")
@@ -305,22 +378,34 @@ class Moderation(commands.Cog):
             return await interaction.response.send_message(
                 "Insufficient permissions.", ephemeral=True
             )
-        role_id = config.muted_role_id
-        if role_id:
-            role = interaction.guild.get_role(role_id)
-            if role and role in user.roles:
-                await user.remove_roles(role, reason="Unmuted by staff")
-        # Mark any active MUTE cases inactive.
-        db = await get_db()
-        await db.execute(
-            "UPDATE moderation_cases SET active=0 WHERE user_id=? AND action_type='MUTE' AND active=1",
-            (user.id,),
-        )
-        await db.commit()
-        await self._log_action(interaction, "UNMUTE", user, "Mute removed")
-        await interaction.response.send_message(
-            f"Unmuted {user.mention}.", ephemeral=False
-        )
+        await interaction.response.defer(ephemeral=False)
+        try:
+            role_id = config.muted_role_id
+            if role_id:
+                role = interaction.guild.get_role(role_id)
+                if role and role in user.roles:
+                    await user.remove_roles(role, reason="Unmuted by staff")
+            # Mark any active MUTE cases inactive.
+            db = await get_db()
+            await db.execute(
+                "UPDATE moderation_cases SET active=0 WHERE user_id=? AND action_type='MUTE' AND active=1",
+                (user.id,),
+            )
+            await db.commit()
+            await self._log_action(interaction, "UNMUTE", user, "Mute removed")
+            await interaction.followup.send(
+                f"Unmuted {user.mention}.", ephemeral=False
+            )
+        except discord.Forbidden:
+            await interaction.followup.send(
+                f"Failed to unmute {user.mention}: the bot needs **Manage Roles** "
+                "permission.",
+                ephemeral=True,
+            )
+        except discord.HTTPException as exc:
+            await interaction.followup.send(
+                f"Failed to unmute {user.mention}: {exc}", ephemeral=True
+            )
 
     @app_commands.command(name="modcase", description="View a user's moderation history")
     @app_commands.describe(user="User to look up")
