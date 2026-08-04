@@ -47,7 +47,9 @@ class Config:
     """Immutable application configuration loaded from the environment."""
 
     # -- Discord credentials --
-    discord_token: str = field(default_factory=lambda: _env_str("DISCORD_TOKEN"))
+    discord_token: str = field(
+        default_factory=lambda: _env_str("DISCORD_TOKEN")
+    )
     client_id: int = field(
         default_factory=lambda: _env_int("CLIENT_ID", 0)
     )
@@ -190,6 +192,19 @@ class Config:
         default_factory=lambda: _env_int("TRANSCRIPT_RETENTION_DAYS", 14)
     )
 
+    # -- FAA NMS-API NOTAM proxy (v0.25.60) --
+    # Credentials for the FAA NMS-API itself live only on the VPS. The bot
+    # talks to the opsroom.live proxy with a shared bearer token, falling
+    # back to the admin API token when NMS_PROXY_TOKEN is not configured.
+    nms_proxy_base_url: str = field(
+        default_factory=lambda: _env_str(
+            "NMS_PROXY_BASE_URL", "https://opsroom.live"
+        )
+    )
+    nms_proxy_token: str = field(
+        default_factory=lambda: _env_str("NMS_PROXY_TOKEN", "")
+    )
+
     # -- Pending action dispatcher --
     pending_action_poll_seconds: int = field(
         default_factory=lambda: _env_int("PENDING_ACTION_POLL_SECONDS", 15)
@@ -226,4 +241,3 @@ class Config:
 # Single shared configuration instance consumed across the codebase.
 # Required env vars (DISCORD_TOKEN etc.) raise at startup if missing.
 config = Config()
-

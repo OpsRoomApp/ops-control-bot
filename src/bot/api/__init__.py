@@ -123,18 +123,48 @@ def _pilot_summary(pilot: dict[str, Any]) -> dict[str, Any]:
 
 
 async def fetch_vatsim_atis(icao: str) -> dict[str, Any] | None:
-    """Fetch ATIS for an airport from VATSIM."""
+    """Fetch ATIS for an airport from VATSIM.
+
+    The v3 data feed ATIS records do not carry an ``airport`` field — the
+    ICAO is the prefix of the callsign (e.g. ``KJFK_D_ATIS``) and the text
+    lives as a list under ``text_atis`` (v2 used the ``atis_message``
+    string). We match on the explicit ``airport`` key when present and on
+    the callsign prefix otherwise, then normalize the text list into a
+    single string.
+    """
+    target = icao.strip().upper()
     data = await fetch_vatsim_data()
-    atis_list = data.get("atis", [])
-    for atis in atis_list:
-        if atis.get("airport", "").strip().upper() == icao.strip().upper():
-            return {
-                "airport": atis.get("airport"),
-                "atis_code": atis.get("atis_code"),
-                "atis_message": atis.get("atis_message"),
-                "cid": atis.get("cid"),
-                "name": atis.get("name"),
-            }
+    for atis in data.get("atis", []):
+        if not isinstance(atis, dict):
+            continue
+        airport = str(atis.get("airport") or "").strip().upper()
+        callsign = str(atis.get("callsign") or "")
+        if not airport and callsign:
+            airport = callsign.split("_")[0].strip().upper()
+        if airport != target:
+            continue
+
+        text = atis.get("text_atis") or atis.get("atis_message") or ""
+        if isinstance(text, list):
+            text = "\n".join(str(part) for part in text if str(part).strip())
+
+        parts = callsign.split("_")
+        atis_type = "ATIS"
+        if len(parts) >= 3:
+            segment = parts[-2].strip().upper()
+            if segment in ("D", "DEP"):
+                atis_type = "Departure ATIS"
+            elif segment in ("A", "ARR"):
+                atis_type = "Arrival ATIS"
+
+        return {
+            "airport": airport,
+            "atis_type": atis_type,
+            "atis_code": atis.get("atis_code"),
+            "atis_message": str(text).strip() or None,
+            "cid": atis.get("cid"),
+            "name": atis.get("name"),
+        }
     return None
 
 

@@ -32,7 +32,6 @@ class HelpCog(commands.Cog):
     )
     async def help(self, interaction: discord.Interaction) -> None:
         """Show command list based on user permissions."""
-
         is_owner = interaction.user.id == OWNER_ID
         is_admin = (
             isinstance(interaction.user, discord.Member)
@@ -46,27 +45,33 @@ class HelpCog(commands.Cog):
         is_staff = is_owner or is_admin or is_mod
 
         embed = discord.Embed(
-            title="OPS CONTROL -- Command Reference",
+            title="OPS CONTROL — everything you can do here",
+            description=(
+                "Hey! Here's what I can do, grouped by what it's for. "
+                "**< >** means you type a value (like an ICAO code); "
+                "**[]** means it's optional. "
+                "Got a question I can't answer? `/support` opens a ticket."
+            ),
             color=0x2563EB,
             timestamp=discord.utils.utcnow(),
         )
 
         # -- Flight Operations --
         flight_commands = [
-            ("/flightwatch <CALLSIGN>", "Track a VATSIM aircraft in real time"),
-            ("/vatsim-status", "Current VATSIM network statistics"),
+            ("/flightwatch <CALLSIGN>", "Watch a VATSIM aircraft live"),
+            ("/vatsim-status", "How busy is the network right now"),
             ("/flight vatsim", "VATSIM network status (group)"),
-            ("/flight opensky [icao24]", "OpenSky Network live aircraft states"),
-            ("/flight simbrief <username>", "SimBrief flight plan by username"),
-            ("/flight status", "Flight operations API health check"),
+            ("/flight opensky [icao24]", "Live aircraft from OpenSky"),
+            ("/flight simbrief <username>", "Pull a SimBrief flight plan"),
+            ("/flight status", "Flight ops API health check"),
             ("/ops-status", "Flight operations dashboard"),
-            ("/airport-status <ICAO>", "Aggregated airport status (VATSIM + NOTAM + weather)"),
-            ("/vatsim-set <CID>", "Link your VATSIM CID for auto takeoff/landing posts"),
-            ("/vatsim-unset", "Remove your linked VATSIM CID"),
+            ("/airport-status <ICAO>", "One-stop airport snapshot: VATSIM + NOTAMs + weather"),
+            ("/vatsim-set <CID>", "Link your VATSIM CID (auto takeoff/landing posts)"),
+            ("/vatsim-unset", "Unlink your VATSIM CID"),
         ]
         embed.add_field(
             name="Flight Operations & VATSIM",
-            value="\n".join(f"`{cmd}` - {desc}" for cmd, desc in flight_commands),
+            value="\n".join(f"`{cmd}` — {desc}" for cmd, desc in flight_commands),
             inline=False,
         )
 
@@ -74,70 +79,71 @@ class HelpCog(commands.Cog):
         simbrief_commands = [
             ("/link-simbrief <username> [static_id]", "Link your Discord account to SimBrief"),
             ("/ofp [username]", "Fetch your latest Operational Flight Plan"),
-            ("/randomroute", "Generate a realistic random flight route with SimBrief button"),
+            ("/randomroute", "Spin up a random route — pick aircraft, time, region, conditions"),
         ]
         embed.add_field(
             name="SimBrief & Flight Planning",
-            value="\n".join(f"`{cmd}` - {desc}" for cmd, desc in simbrief_commands),
+            value="\n".join(f"`{cmd}` — {desc}" for cmd, desc in simbrief_commands),
             inline=False,
         )
 
         # -- Weather & Briefing --
         weather_commands = [
-            ("/metar <ICAO>", "Aviation weather observation report"),
-            ("/weather metar <ICAO>", "Detailed METAR from NOAA"),
+            ("/metar <ICAO>", "Quick METAR for an airport"),
+            ("/weather metar <ICAO>", "Detailed NOAA METAR"),
             ("/weather taf <ICAO>", "Terminal Area Forecast"),
-            ("/atis <ICAO>", "VATSIM ATIS information"),
-            ("/notam-external <ICAO>", "Active NOTAMs for an airport"),
-            ("/sigmet", "Active aviation weather warnings"),
+            ("/atis <ICAO>", "Live VATSIM ATIS text"),
+            ("/notam-external <ICAO>", "Current NOTAMs for an airport"),
+            ("/notams geo|fdc|checklist|search", "Live FAA NMS NOTAMs — area, TFRs/FDCs, checklists, free text"),
+            ("/sigmet", "Active aviation weather advisories"),
         ]
         embed.add_field(
             name="Weather & Briefing",
-            value="\n".join(f"`{cmd}` - {desc}" for cmd, desc in weather_commands),
+            value="\n".join(f"`{cmd}` — {desc}" for cmd, desc in weather_commands),
             inline=False,
         )
 
         # -- Community / Support --
         community_commands = [
-            ("/rules", "View the community rules (owner-configurable)"),
-            ("/support", "Create a support ticket"),
-            ("/bug", "Report a bug in OPS ROOM"),
-            ("/status", "Bot health, version, latency, and loaded modules"),
-            ("/ping", "Check bot latency"),
-            ("/profile", "View your user profile"),
-            ("/profile-set", "Update your profile settings (simulator / network)"),
-            ("/roles", "Select your simulator and network preferences"),
+            ("/rules", "The house rules"),
+            ("/support", "Open a support ticket"),
+            ("/bug", "Report an OPS ROOM bug"),
+            ("/status", "Bot health, version, latency, loaded modules"),
+            ("/ping", "Latency check"),
+            ("/profile", "Your user profile"),
+            ("/profile-set", "Update profile (simulator / network)"),
+            ("/roles", "Pick your simulator and network roles"),
         ]
         embed.add_field(
             name="Community & Profile",
-            value="\n".join(f"`{cmd}` - {desc}" for cmd, desc in community_commands),
+            value="\n".join(f"`{cmd}` — {desc}" for cmd, desc in community_commands),
             inline=False,
         )
 
         # -- Tools & Information --
         tools_commands = [
-            ("/logbook", "View flight logbook"),
-            ("/log-flight", "Log a completed flight"),
+            ("/logbook", "Your flight log"),
+            ("/log-flight", "Log a flight you just finished"),
             ("/airport-add <ICAO> <type>", "Save an airport preference"),
-            ("/airport-remove <ICAO>", "Remove a saved airport"),
-            ("/preferences", "View notification preferences"),
-            ("/preferences-set", "Update notification preferences"),
-            ("/latest", "Latest OPS ROOM release"),
-            ("/changelog", "Recent version changes"),
-            ("/roadmap", "OPS ROOM development roadmap"),
-            ("/help", "Display this command reference"),
+            ("/airport-remove <ICAO>", "Drop a saved airport"),
+            ("/preferences", "Your notification preferences"),
+            ("/preferences-set", "Change your notification preferences"),
+            ("/latest", "Newest OPS ROOM release"),
+            ("/changelog", "What changed in recent versions"),
+            ("/roadmap", "What's coming down the pipe"),
+            ("/help", "This list again"),
         ]
         embed.add_field(
             name="Tools & Information",
-            value="\n".join(f"`{cmd}` - {desc}" for cmd, desc in tools_commands),
+            value="\n".join(f"`{cmd}` — {desc}" for cmd, desc in tools_commands),
             inline=False,
         )
 
         # -- Staff Commands --
         if is_staff:
             staff_commands = [
-                ("/announce <title> <content>", "Send an announcement to the announcements channel"),
-                ("/purge <amount>", "Delete messages in bulk"),
+                ("/announce <title> <content>", "Post an announcement to the announcements channel"),
+                ("/purge <amount>", "Bulk-delete messages"),
                 ("/betatester add|remove <user>", "Manage beta tester roles"),
                 ("/warn <user> <reason>", "Warn a user"),
                 ("/kick <user> <reason>", "Kick a user"),
@@ -147,12 +153,12 @@ class HelpCog(commands.Cog):
                 ("/untimeout <user>", "Remove a user's timeout"),
                 ("/mute <user> [hours] [reason]", "Role-based mute (supports permanent)"),
                 ("/unmute <user>", "Remove the Muted role"),
-                ("/modcase <user>", "View a user's moderation history"),
+                ("/modcase <user>", "A user's moderation history"),
                 ("/notam add|list|remove", "Internal NOTAM management"),
             ]
             embed.add_field(
                 name="Staff Commands",
-                value="\n".join(f"`{cmd}` - {desc}" for cmd, desc in staff_commands),
+                value="\n".join(f"`{cmd}` — {desc}" for cmd, desc in staff_commands),
                 inline=False,
             )
 
@@ -170,11 +176,11 @@ class HelpCog(commands.Cog):
             ]
             embed.add_field(
                 name="Admin / Owner Commands",
-                value="\n".join(f"`{cmd}` - {desc}" for cmd, desc in owner_commands),
+                value="\n".join(f"`{cmd}` — {desc}" for cmd, desc in owner_commands),
                 inline=False,
             )
 
-        embed.set_footer(text="OPS ROOM Operations Platform")
+        embed.set_footer(text="Stuck on something? /support gets you a human. — OPS ROOM")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 

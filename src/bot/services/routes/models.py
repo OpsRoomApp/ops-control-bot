@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 # ---------------------------------------------------------------------------
@@ -71,7 +71,13 @@ class RouteResult:
     flight_number_digits: str = ""  # numeric part for SimBrief fltnum
 
     def to_embed_fields(self) -> list[tuple[str, str]]:
-        """Return ordered embed fields for the /randomroute result."""
+        """Return ordered embed fields for the /randomroute result.
+
+        The suggested operator/callsign are intentionally NOT shown: they
+        are generated locally, are never a claim of a real scheduled
+        service, and the pairing read as vague/confusing. They remain
+        available internally for the SimBrief button prefill.
+        """
         return [
             ("Aircraft", self.aircraft_name),
             ("Origin", f"{self.origin} -- {self.origin_name}"),
@@ -79,8 +85,6 @@ class RouteResult:
             ("Requested Flight Time", self.requested_time),
             ("Estimated Flight Time", self.estimated_time),
             ("Distance", f"{round(self.distance_nm)} NM"),
-            ("Suggested Operator", self.operator),
-            ("Suggested Callsign", self.callsign),
         ]
 
 

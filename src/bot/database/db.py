@@ -172,7 +172,9 @@ CREATE TABLE IF NOT EXISTS tickets (
     transcript_channel_id  INTEGER,
     transcript_message_id  INTEGER,
     transcript_dm_sent     INTEGER NOT NULL DEFAULT 0,
-    transcript_error       TEXT
+    transcript_error       TEXT,
+    close_reason           TEXT,
+    transcript_url         TEXT
 );
 
 -- Flight logs (prepared for future telemetry integration)

@@ -368,36 +368,25 @@ class AircraftCodeRegressionTests(unittest.TestCase):
         self.assertTrue(url.startswith("https://dispatch.simbrief.com/options/custom?"))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
-
 class FooterAttributionTests(unittest.TestCase):
-    """The Where2Fly attribution must be a clickable Markdown link.
-
-    Discord embed footers do NOT render Markdown links (only bold / italic /
-    underline / strike / code). The render block therefore keeps the footer
-    as plain text and puts the clickable `[Powered by Where2Fly](url)` in a
-    "Powered by" embed field value, where it renders as a blue hyperlink.
-    This test locks that format so it cannot regress.
+    """The Where2Fly attribution must be a clickable Markdown link — shown
+    exactly once, as a "Powered by" embed field (Discord footers do not
+    render Markdown links). The footer stays plain text; no duplication.
     """
 
-    def _render(self, powered_by, powered_by_url, route_source="Where2Fly"):
-        """Mirror the render block in randomroute.py: returns (footer, field)."""
-        attribution = "Operational suggestion only \u2014 not a confirmed scheduled service."
-        if powered_by:
-            attribution = f"{powered_by} -- {route_source}"
+    def _render(self, powered_by, powered_by_url):
+        """Mirror the render block in randomroute.build_result_embed."""
+        footer = "Operational suggestion only \u2014 not a confirmed scheduled service."
         field = None
         if powered_by_url:
-            field = (name := "Powered by", f"[{powered_by}]({powered_by_url})")
-        return attribution, field
+            field = ("Powered by", f"[{powered_by}]({powered_by_url})")
+        return footer, field
 
-    def test_attribution_is_field_hyperlink(self):
+    def test_attribution_is_single_field_hyperlink(self):
         footer, field = self._render("Powered by Where2Fly", "https://where2fly.today")
+        # No duplicate attribution in the footer.
+        self.assertNotIn("Powered by Where2Fly", footer)
         self.assertNotIn("[", footer)
-        self.assertIn("Powered by Where2Fly -- Where2Fly", footer)
-        # The clickable link must live in a field value, not the footer.
         self.assertIsNotNone(field)
         self.assertEqual(field[0], "Powered by")
         self.assertEqual(field[1], "[Powered by Where2Fly](https://where2fly.today)")
@@ -405,7 +394,10 @@ class FooterAttributionTests(unittest.TestCase):
 
     def test_footer_without_url_stays_plain_text(self):
         footer, field = self._render("Powered by Where2Fly", None)
-        self.assertEqual(footer, "Powered by Where2Fly -- Where2Fly")
+        self.assertEqual(
+            footer,
+            "Operational suggestion only \u2014 not a confirmed scheduled service.",
+        )
         self.assertIsNone(field)
 
     def test_footer_without_powered_by_is_generic(self):
@@ -413,3 +405,7 @@ class FooterAttributionTests(unittest.TestCase):
         self.assertIn("Operational suggestion only", footer)
         self.assertNotIn("Where2Fly", footer)
         self.assertIsNone(field)
+
+
+if __name__ == "__main__":
+    unittest.main()

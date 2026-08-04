@@ -14,10 +14,24 @@ Reminder (default 30 min before start):
   image, link and local-time timestamp.
 
 Avoids duplicate posts by tracking posted/reminded in vatsim_events table.
+
+Reminder timing (fixed in v0.25.60):
+  With the legacy 15-minute poll, the reminder only fired on the first poll
+  *inside* the window — which could be up to 15 minutes late (observed at
+  19 minutes before start instead of 30). Reminders are now delivered by an
+  exact-time asyncio task scheduled when the event is announced, so they fire
+  at precisely `start_time - reminder_minutes`. The poll check remains as a
+  restart safety net (fires late only if the task was lost).
+
+Footer timestamps:
+  Discord embed footers do NOT render `<t:...>` timestamps — the same markup
+  in the description/fields does. The footer therefore stays plain text; the
+  description carries the rendered local-time timestamps.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
 
@@ -48,6 +62,8 @@ class VatsimEvents(commands.Cog):
         self.bot = bot
         self._session: aiohttp.ClientSession | None = None
         self._poll_task: tasks.Loop | None = None
+        # Exact-time reminder deliveries keyed by event id (cancelled on unload).
+        self._reminder_tasks: dict[str, asyncio.Task] = {}
 
     async def cog_load(self):
         self._session = aiohttp.ClientSession()
@@ -61,6 +77,9 @@ class VatsimEvents(commands.Cog):
         self._poll_task.start()
 
     async def cog_unload(self):
+        for task in self._reminder_tasks.values():
+            task.cancel()
+        self._reminder_tasks.clear()
         if self._poll_task:
             self._poll_task.cancel()
         if self._session:
@@ -134,6 +153,103 @@ class VatsimEvents(commands.Cog):
             embed.set_image(url=banner)
         embed.set_footer(text=footer)
         return embed
+
+    # -- reminder scheduling --------------------------------------------
+
+    def _schedule_reminder(
+        self,
+        event: dict,
+        title: str,
+        start_time: datetime,
+        end_time: datetime | None,
+        channel: discord.TextChannel,
+        reminder_minutes: int,
+    ) -> None:
+        """Schedule an exact-time reminder at ``start_time - reminder_minutes``.
+
+        Only runs while the cog's poll loop is live (``cog_load`` ran). The
+        direct-call path used by tests (and restart recovery) relies on the
+        poll safety net instead, which keeps the event DB deterministic.
+        """
+        if self._poll_task is None:
+            return
+        event_id = str(event.get("id") or "")
+        if not event_id or event_id in self._reminder_tasks:
+            return
+        delay = (
+            start_time - timedelta(minutes=reminder_minutes) - datetime.now(timezone.utc)
+        ).total_seconds()
+        if delay <= 0:
+            return  # ideal point already passed — the poll safety net covers it
+        task = asyncio.create_task(
+            self._deliver_reminder_later(
+                event, title, start_time, end_time, channel, delay
+            )
+        )
+        self._reminder_tasks[event_id] = task
+
+    async def _deliver_reminder_later(
+        self,
+        event: dict,
+        title: str,
+        start_time: datetime,
+        end_time: datetime | None,
+        channel: discord.TextChannel,
+        delay: float,
+    ) -> None:
+        """Sleep until the reminder point, then send (DB-gated, at most once)."""
+        event_id = str(event.get("id") or "")
+        try:
+            await asyncio.sleep(delay)
+            if datetime.now(timezone.utc) >= start_time:
+                return  # event already started — no reminder
+            db = await get_db()
+            cursor = await db.execute(
+                "SELECT reminded FROM vatsim_events WHERE event_id=?", (event_id,)
+            )
+            row = await cursor.fetchone()
+            if row is None or row["reminded"]:
+                return
+            await self._send_reminder(event, title, start_time, end_time, channel)
+            await db.execute(
+                "UPDATE vatsim_events SET reminded=1 WHERE event_id=?", (event_id,)
+            )
+            await db.commit()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception(
+                "Scheduled VATSIM event reminder failed (event=%s)", event_id
+            )
+        finally:
+            self._reminder_tasks.pop(event_id, None)
+
+    async def _send_reminder(
+        self,
+        event: dict,
+        title: str,
+        start_time: datetime,
+        end_time: datetime | None,
+        channel: discord.TextChannel,
+    ) -> None:
+        """Send the reminder embed once (used by the scheduled task and poll)."""
+        try:
+            minutes_left = max(
+                1,
+                int((start_time - datetime.now(timezone.utc)).total_seconds() // 60),
+            )
+            embed = self._build_embed(
+                event,
+                title,
+                start_time,
+                end_time,
+                footer=f"Reminder \u2022 Starting in {minutes_left} min",
+            )
+            await channel.send(embed=embed)
+        except discord.HTTPException:
+            pass
+
+    # -- poll loop -------------------------------------------------------
 
     async def _poll_vatsim_events(self):
         try:
@@ -221,7 +337,7 @@ class VatsimEvents(commands.Cog):
                         title,
                         start_time,
                         end_time,
-                        footer=f"Starting time \u27a1 \u2022 {_discord_timestamp(start_time)}",
+                        footer="Starting soon \u2022 VATSIM Event",
                     )
                     try:
                         await channel.send(embed=embed)
@@ -233,28 +349,24 @@ class VatsimEvents(commands.Cog):
                             (event_id,),
                         )
                         await db.commit()
+                    # Schedule the precise reminder now the event is live.
+                    self._schedule_reminder(
+                        event, title, start_time, end_time, channel, reminder_minutes
+                    )
                 continue
 
-            # Reminder: once inside the reminder window, at most once.
+            # Reminder: delivered at the exact time by the scheduled task in
+            # normal operation. The poll is a restart safety net that only
+            # fires once the ideal reminder point has passed and no task is
+            # pending (i.e. the task was lost in a restart).
             if row["reminded"]:
                 continue
             if timedelta(0) < time_to_start <= timedelta(minutes=reminder_minutes):
-                embed = self._build_embed(
-                    event,
-                    title,
-                    start_time,
-                    end_time,
-                    footer=(
-                        f"Reminder \u2022 Starting in "
-                        f"{time_to_start.total_seconds() // 60:.0f} min \u2022 "
-                        f"{_discord_timestamp(start_time)}"
-                    ),
-                )
-                try:
-                    await channel.send(embed=embed)
-                except discord.Forbidden:
-                    pass
-                else:
+                ideal = start_time - timedelta(minutes=reminder_minutes)
+                if now >= ideal and event_id not in self._reminder_tasks:
+                    await self._send_reminder(
+                        event, title, start_time, end_time, channel
+                    )
                     await db.execute(
                         "UPDATE vatsim_events SET reminded=1 WHERE event_id=?",
                         (event_id,),

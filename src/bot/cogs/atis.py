@@ -63,6 +63,7 @@ class AtisCog(commands.Cog):
             color=0x059669,
             description=f"```{data['atis_message']}```" if data.get("atis_message") else None,
         )
+        embed.add_field(name="Type", value=data.get("atis_type", "ATIS"), inline=True)
         embed.add_field(name="ATIS Code", value=data.get("atis_code", "N/A"), inline=True)
         embed.add_field(name="Controller", value=data.get("name", "N/A"), inline=True)
         embed.add_field(name="CID", value=str(data.get("cid", "N/A")), inline=True)
