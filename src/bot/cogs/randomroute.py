@@ -211,7 +211,7 @@ class AirportModal(discord.ui.Modal, title="More route options (all optional)"):
         if self._view.message_id is not None:
             try:
                 await interaction.followup.edit(
-                    self._view.message_id, embed=embed, view=self._view
+                    self._view.message_id, embeds=[embed], view=self._view
                 )
                 return
             except (discord.HTTPException, discord.NotFound):
@@ -471,7 +471,7 @@ class RoutePreferencesView(discord.ui.View):
         if source_id is not None:
             try:
                 await interaction.followup.edit(
-                    source_id, embed=embed, view=view
+                    source_id, embeds=[embed], view=view
                 )
                 return
             except (discord.HTTPException, discord.NotFound):
