@@ -210,7 +210,7 @@ class AirportModal(discord.ui.Modal, title="More route options (all optional)"):
         embed = self._view.summary_embed()
         if self._view.message_id is not None:
             try:
-                await interaction.followup.edit(
+                await interaction.followup.edit_message(
                     self._view.message_id, embeds=[embed], view=self._view
                 )
                 return
@@ -470,7 +470,7 @@ class RoutePreferencesView(discord.ui.View):
             source_id = interaction.message.id
         if source_id is not None:
             try:
-                await interaction.followup.edit(
+                await interaction.followup.edit_message(
                     source_id, embeds=[embed], view=view
                 )
                 return
