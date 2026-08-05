@@ -86,9 +86,71 @@ def _geojson_rows(body: dict[str, Any] | None) -> list[dict[str, Any]]:
     return [_feature_to_row(item) for item in geojson if isinstance(item, dict)]
 
 
+def _db_base() -> str:
+    return (config.notam_db_base_url or config.nms_proxy_base_url or "https://opsroom.live").rstrip("/")
+
+
+def _db_row_to_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Normalize one DB-served NOTAM into the bot's row shape."""
+    return {
+        "identifier": str(row.get("id") or "N/A"),
+        "nms_id": str(row.get("nms_id") or ""),
+        "effective": str(row.get("effective_utc") or "N/A"),
+        "expiry": str(row.get("expires_utc") or "PERM"),
+        "description": str(row.get("text") or "No NOTAM text returned."),
+        "type": str(row.get("classification") or row.get("status") or "NOTAM"),
+        "source": "FAA NMS DB",
+        "location": str(row.get("location") or ""),
+        "qcode": str(row.get("qcode") or ""),
+    }
+
+
+async def fetch_db_notams(location: str) -> list[dict[str, Any]]:
+    """Query the server-side NOTAM database (v0.25.63) -- zero FAA quota.
+
+    Returns an empty list on any failure so callers fall back to the proxy.
+    """
+    if not config.notam_db_enabled:
+        return []
+    location = (location or "").strip().upper()
+    if len(location) != 4:
+        return []
+    url = f"{_db_base()}/api/v1/notams/{location}"
+    headers = {"Accept": "application/json"}
+    token = _nms_token()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        session = await _get_session()
+        async with session.get(url, headers=headers) as resp:
+            if resp.status != 200:
+                logger.info("NOTAM DB %s returned HTTP %s; falling back to proxy", location, resp.status)
+                return []
+            body = await resp.json()
+    except Exception:
+        logger.exception("NOTAM DB fetch failed for %s", location)
+        return []
+    if not isinstance(body, dict):
+        return []
+    rows = body.get("notams") or []
+    return [_db_row_to_row(item) for item in rows if isinstance(item, dict)]
+
+
 async def fetch_nms_notams(location: str = "", lat: float | None = None, lon: float | None = None,
                            radius: float | None = None, classification: str = "", feature: str = "") -> list[dict[str, Any]]:
-    """Query the NMS proxy for NOTAMs by location or geo-radius (GeoJSON)."""
+    """Query the NMS proxy for NOTAMs by location or geo-radius (GeoJSON).
+
+    Location queries prefer the server-side NOTAM database when enabled;
+    geo-radius queries always use the proxy (the DB /near endpoint is the
+    app's, not the bot's, primary surface for now).
+    """
+    if location and not lat:
+        try:
+            db_rows = await fetch_db_notams(location)
+            if db_rows:
+                return db_rows
+        except Exception:
+            logger.exception("NOTAM DB pre-query failed for %s", location)
     params: dict[str, Any] = {}
     if location:
         params["location"] = location.strip().upper()
@@ -145,6 +207,14 @@ async def fetch_notams(icao: str) -> list[dict[str, Any]]:
     icao = icao.strip().upper()
 
     results: list[dict[str, Any]] = []
+
+    # v0.25.63: server-side NOTAM database first (zero FAA quota per query).
+    try:
+        db_rows = await fetch_db_notams(icao)
+        if db_rows:
+            return db_rows
+    except Exception:
+        logger.exception("NOTAM DB fetch failed for %s", icao)
 
     # v0.25.60: NMS proxy first when a shared token is configured.
     if _nms_token():

@@ -205,6 +205,16 @@ class Config:
         default_factory=lambda: _env_str("NMS_PROXY_TOKEN", "")
     )
 
+    # -- NOTAM database (v0.25.63) --
+    # The server-side NOTAM store is preferred (zero FAA quota per request);
+    # the bot falls back to the NMS proxy when the DB is not deployed yet.
+    notam_db_base_url: str = field(
+        default_factory=lambda: _env_str("NOTAM_DB_BASE_URL", "")
+    )
+    notam_db_enabled: bool = field(
+        default_factory=lambda: _env_bool("NOTAM_DB_ENABLED", True)
+    )
+
     # -- Pending action dispatcher --
     pending_action_poll_seconds: int = field(
         default_factory=lambda: _env_int("PENDING_ACTION_POLL_SECONDS", 15)
