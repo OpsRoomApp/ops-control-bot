@@ -107,8 +107,17 @@ class WelcomeCog(commands.Cog):
         try:
             image_path = self.generator.generate(name=interaction.user.display_name)
 
+            verify_prompt = ""
+            if config.verify_channel_id:
+                verify_prompt = (
+                    f" Please verify in <#{config.verify_channel_id}> "
+                    "to unlock full server access."
+                )
             await interaction.followup.send(
-                content=f"**Welcome test** for {interaction.user.mention}",
+                content=(
+                    f"**Welcome test** for {interaction.user.mention}"
+                    f"{verify_prompt}"
+                ),
                 file=discord.File(str(image_path)),
             )
 
