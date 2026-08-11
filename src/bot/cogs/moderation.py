@@ -443,6 +443,101 @@ class Moderation(commands.Cog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     # ------------------------------------------------------------------
+    # Scambait channel
+    # ------------------------------------------------------------------
+
+    @app_commands.command(
+        name="scambait-warning",
+        description="[Admin] Post the restricted-channel warning notice in the scambait channel",
+    )
+    async def scambait_warning_cmd(self, interaction: discord.Interaction):
+        if not await is_staff(interaction):
+            return await interaction.response.send_message(
+                "Insufficient permissions.", ephemeral=True
+            )
+        if not config.scambait_channel_id:
+            return await interaction.response.send_message(
+                "SCAMBAIT_CHANNEL_ID is not configured. Cannot post warning.",
+                ephemeral=True,
+            )
+        channel = interaction.guild.get_channel(config.scambait_channel_id)
+        if channel is None:
+            return await interaction.response.send_message(
+                "Scambait channel not found in this guild.", ephemeral=True
+            )
+        try:
+            await channel.send(embed=self._scambait_warning_embed(interaction.guild))
+        except discord.Forbidden:
+            return await interaction.response.send_message(
+                f"Failed to post warning: the bot cannot send messages in <#{config.scambait_channel_id}>.",
+                ephemeral=True,
+            )
+        await interaction.response.send_message(
+            f"Warning posted in <#{config.scambait_channel_id}>.", ephemeral=True
+        )
+
+    async def _scambait_act(self, message: discord.Message):
+        """Soft-ban (timeout) anyone who posts in the restricted scambait channel."""
+        guild = message.guild
+        member = message.author
+        minutes = max(1, int(config.scambait_timeout_minutes or 60))
+        until = discord.utils.utcnow() + timedelta(minutes=minutes)
+        reason = (
+            f"Sent a message in the restricted channel #{message.channel.name} "
+            "(scambait)"
+        )
+        try:
+            await message.delete()
+        except (discord.Forbidden, discord.HTTPException):
+            pass
+        try:
+            await member.timeout(until, reason=reason)
+        except (discord.Forbidden, discord.HTTPException):
+            pass
+        # Moderation case + mod-log embed.
+        await self._log_action_raw(
+            guild, "SCAMBAIT_TIMEOUT", member, reason,
+            moderator_id=self.bot.user.id or 0,
+            expires_at=until.isoformat(),
+        )
+        # DM the user with the warning and the appeal link.
+        appeal = config.appeal_form_url or "https://opsroom.live/appeal"
+        try:
+            await member.send(
+                f"You sent a message in **#{message.channel.name}** on "
+                f"{guild.name}, which is a **restricted channel**. "
+                f"Do not send messages there."
+                + chr(10) * 2
+                + f"Your ability to send messages in this server has been temporarily "
+                f"suspended for {minutes} minute(s)."
+                + chr(10) * 2
+                + f"If you believe this is a mistake, appeal here: {appeal}"
+            )
+        except (discord.Forbidden, discord.HTTPException):
+            pass
+        # Visible warning in the channel itself.
+        try:
+            await message.channel.send(embed=self._scambait_warning_embed(guild))
+        except (discord.Forbidden, discord.HTTPException):
+            pass
+
+    def _scambait_warning_embed(self, guild: discord.Guild) -> discord.Embed:
+        appeal = config.appeal_form_url or "https://opsroom.live/appeal"
+        embed = discord.Embed(
+            title="Restricted Channel - Do Not Send Messages",
+            description=(
+                "This channel is monitored. **Any message posted here results "
+                "in an automatic suspension of your ability to send messages "
+                "in this server.**"
+                + chr(10) * 2
+                + f"If you believe this was a mistake, appeal here: {appeal}"
+            ),
+            color=discord.Color.red(),
+        )
+        embed.set_footer(text=guild.name)
+        return embed
+
+    # ------------------------------------------------------------------
     # Automod (on_message event)
     # ------------------------------------------------------------------
 
@@ -451,6 +546,12 @@ class Moderation(commands.Cog):
         if message.author.bot or not message.guild:
             return
         if await is_staff(message):
+            return
+
+        # Scambait channel: any message from a normal member here
+        # triggers an instant soft-ban (timeout) with a warning and appeal link.
+        if config.scambait_channel_id and message.channel.id == config.scambait_channel_id:
+            await self._scambait_act(message)
             return
 
         # Spam detection

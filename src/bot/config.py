@@ -192,6 +192,29 @@ class Config:
         default_factory=lambda: _env_int("TRANSCRIPT_RETENTION_DAYS", 14)
     )
 
+    # -- Scambait channel --
+    # Anyone (non-staff) who posts a message in this channel is automatically
+    # soft-banned (timeout) and shown the appeal link.
+    scambait_channel_id: int = field(
+        default_factory=lambda: _env_int("SCAMBAIT_CHANNEL_ID", 0)
+    )
+    scambait_timeout_minutes: int = field(
+        default_factory=lambda: _env_int("SCAMBAIT_TIMEOUT_MINUTES", 60)
+    )
+
+    # -- Member verification gate --
+    # New members join with no (or the unverified) role; they click the Verify
+    # button in the verify channel to receive the member role.
+    verify_channel_id: int = field(
+        default_factory=lambda: _env_int("VERIFY_CHANNEL_ID", 0)
+    )
+    verify_member_role_id: int = field(
+        default_factory=lambda: _env_int("VERIFY_MEMBER_ROLE_ID", 0)
+    )
+    verify_unverified_role_id: int = field(
+        default_factory=lambda: _env_int("VERIFY_UNVERIFIED_ROLE_ID", 0)
+    )
+
     # -- FAA NMS-API NOTAM proxy (v0.25.60) --
     # Credentials for the FAA NMS-API itself live only on the VPS. The bot
     # talks to the opsroom.live proxy with a shared bearer token, falling

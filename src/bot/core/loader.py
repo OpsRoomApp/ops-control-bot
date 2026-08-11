@@ -38,6 +38,7 @@ _REQUIRED_COGS: list[str] = [
     "bot.cogs.help_cog",
     "bot.cogs.betatester",
     "bot.cogs.roles_cog",
+    "bot.cogs.verify",
     "bot.cogs.randomroute",
     # v0.25.55 (B2) -- full moderation suite + automod
     "bot.cogs.moderation",

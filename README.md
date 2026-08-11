@@ -73,6 +73,8 @@ Built with Python 3.12+, discord.py 2.x, Pillow, and aiosqlite. Designed for Doc
 | `/help` | Command list grouped by permission level |
 | `/purge N` | [Moderator+] Delete N messages |
 | `/betatester add/remove` | [Beta Coordinator+] Manage beta tester roles |
+| `/scambait-warning` | [Admin] Post the restricted-channel warning notice in the scambait channel |
+| `/verify-setup` | [Admin] Post or refresh the persistent Verify button in the verification channel |
 | `/roles` | Role selection (simulator, network, tester) |
 
 ---
@@ -132,6 +134,11 @@ cd src && python -m bot.main
 | `SUPPORT_DISPATCH_ROLE_ID` | No | — | Support Dispatch role (ticket mentions) |
 | `DEVELOPER_ROLE_ID` | No | — | Developer role (bug report mentions) |
 | `BETA_COORDINATOR_ROLE_ID` | No | — | Beta Coordinator role for `/betatester` |
+| `SCAMBAIT_CHANNEL_ID` | No | — | Channel that auto-soft-bans (timeout) anyone who posts in it |
+| `SCAMBAIT_TIMEOUT_MINUTES` | No | `60` | Scambait soft-ban duration in minutes (Discord cap: 40320) |
+| `VERIFY_CHANNEL_ID` | No | — | Channel hosting the persistent Verify button |
+| `VERIFY_MEMBER_ROLE_ID` | No | — | Role granted when a member verifies |
+| `VERIFY_UNVERIFIED_ROLE_ID` | No | — | Role removed when a member verifies (optional) |
 | `VERIFIED_TESTER_ROLE_ID` / `PUBLIC_BETA_ROLE_ID` | No | — | Beta tester roles |
 | `WHERE2FLY_ENABLED` | No | `true` | Enable Where2Fly route provider |
 | `WHERE2FLY_API_TOKEN` | No | — | Where2Fly Bearer token (optional; local fallback used when empty) |

@@ -167,6 +167,9 @@ class OpsControlBot(commands.Bot):
             # v0.25.55 (B4) -- persistent reaction-role panel
             from bot.cogs.roles_cog import PersistentRolePanel
             self.add_view(PersistentRolePanel())
+            # Member verification gate -- persistent Verify button
+            from bot.cogs.verify import VerifyView
+            self.add_view(VerifyView())
             logger.info("Persistent views registered.")
         except Exception:
             logger.exception("Failed to register persistent views")

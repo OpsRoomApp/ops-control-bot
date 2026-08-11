@@ -53,8 +53,17 @@ class WelcomeCog(commands.Cog):
                 logger.error("Arrivals channel %s not found", config.arrivals_channel_id)
                 return
 
+            verify_prompt = ""
+            if config.verify_channel_id:
+                verify_prompt = (
+                    f" Please verify in <#{config.verify_channel_id}> "
+                    "to unlock full server access."
+                )
             msg = await channel.send(
-                content=f"**{member.mention}** has arrived. Welcome to OPS ROOM.",
+                content=(
+                    f"**{member.mention}** has arrived. Welcome to OPS ROOM."
+                    f"{verify_prompt}"
+                ),
                 file=discord.File(str(image_path)),
             )
 
