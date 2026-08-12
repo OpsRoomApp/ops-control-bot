@@ -24,43 +24,47 @@ from bot.services.audit import log_event
 
 logger = logging.getLogger("ops_control.cogs.rules")
 
-DEFAULT_RULES = (
-    "**OPS ROOM Community Guidelines**\n\n"
-    "As a community, we strive to protect the members using our service. "
-    "To ensure the protection and enjoyment of all users we have laid out "
-    "some guidelines that shall be adhered to at all times while using the service.\n"
-    "--------------------\n"
-    "**A. Be Respectful**\n"
-    "Treat every member with respect. Harassment, name-calling, swearing at, or "
-    "denigrating members — including staff — is not allowed under any circumstances. "
-    "Remember that this is a hobby and volunteers give their free time.\n"
-    "--------------------\n"
-    "**B. Appropriate Posting**\n"
-    "Keep content in the appropriate designated channels. Sending messages rapidly, "
-    "malicious links, piracy links, or inappropriate content is not allowed. "
-    "Constructive and respectful debates are welcome; arguing is not.\n"
-    "--------------------\n"
-    "**C. Languages**\n"
-    "English shall be the language for communication on the server to ensure everyone "
-    "feels included in discussions, whether on voice or in text channels.\n"
-    "--------------------\n"
-    "**D. Political & Religious Topics**\n"
-    "Under no circumstances are political & religious topics allowed to be discussed "
-    "on the server.\n"
-    "--------------------\n"
-    "**E. Roles and Mentions**\n"
-    "Mentions within the server are to be kept at the bare minimum, including staff "
-    "members. Roles are assigned via the bot's role panel.\n"
-    "--------------------\n"
-    "**F. Discord Terms of Service**\n"
-    "All members must abide by the Terms of Service and Community Guidelines set by "
-    "Discord Inc.\n"
-    "--------------------\n"
-    "**G. Enforcement**\n"
-    "These rules are enforced at all times by the OPS ROOM team. Depending on the "
-    "severity of an infraction it can escalate for further review, and repeat or "
-    "severe offences may result in a timeout, mute, or ban."
-)
+DEFAULT_RULES = """
+**1. Be respectful.**
+No harassment, hate speech, discrimination, or personal attacks. Treat others how you'd want to be treated.
+
+**2. Keep it family-friendly.**
+No NSFW, gore, or otherwise inappropriate content anywhere in the server.
+
+**3. No spam or self-promotion.**
+No unsolicited DMs, link dumping, or advertising other servers, products, or services without staff approval.
+
+**4. No piracy.**
+No discussion or distribution of cracked, pirated, or otherwise illegal software or addons.
+
+**5. Follow Discord's rules.**
+You must comply with Discord's Terms of Service and Community Guidelines at all times.
+
+**6. Keep channels on-topic.**
+Use the right channel for the right subject. Support and bug reports go in their dedicated channels, not general chat.
+
+**7. No doxxing.**
+Do not share anyone's personal information without their explicit consent — including your own.
+
+**8. No begging.**
+Do not ask for free products, keys, roles, or perks, and do not DM staff for them.
+
+**9. English in public channels.**
+Keep public chat in English so everyone can participate. Other languages are welcome in DMs.
+
+**10. Staff have the final say.**
+Moderator decisions are final. If you disagree, use the appeal process — do not argue in public channels.
+
+**11. Verify to participate.**
+Complete verification in the #verify channel to unlock full server access.
+
+**12. Report, don't retaliate.**
+If someone breaks a rule, report it to staff. Do not escalate or engage in public arguments.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━
+*Breaking these rules may result in a warning, mute, timeout, or ban at staff discretion.*
+To appeal a moderation action: https://opsroom.live/appeal
+"""
 
 
 class RulesCog(commands.Cog):
@@ -86,7 +90,7 @@ class RulesCog(commands.Cog):
         """Post the community rules to the channel (visible to everyone)."""
         content = await self._load_rules(interaction.guild_id)
         embed = discord.Embed(
-            title="OPS ROOM -- Community Rules",
+            title=":clipboard: SERVER RULES",
             description=content,
             color=0x2563EB,
         )
