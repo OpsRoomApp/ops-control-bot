@@ -515,11 +515,6 @@ class Moderation(commands.Cog):
             )
         except (discord.Forbidden, discord.HTTPException):
             pass
-        # Visible warning in the channel itself.
-        try:
-            await message.channel.send(embed=self._scambait_warning_embed(guild))
-        except (discord.Forbidden, discord.HTTPException):
-            pass
 
     def _scambait_warning_embed(self, guild: discord.Guild) -> discord.Embed:
         appeal = config.appeal_form_url or "https://opsroom.live/appeal"

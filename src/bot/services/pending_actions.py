@@ -233,6 +233,7 @@ KNOWN_ACTION_TYPES: frozenset[str] = frozenset({
     "ticket_assign", "ticket_close", "ticket_reopen",
     "moderation_reverse",  # C2 -- appeal approval reverses ban/timeout
     "announce_dispatch", "beta_role_change", "ticket_state_change",
+    "flight_event",  # community: takeoff/landing notification from the desktop app
 })
 
 
@@ -253,6 +254,8 @@ async def _execute(bot: commands.Bot, action_type: str, payload: dict[str, Any])
         "ticket_reopen": _dispatch_ticket_reopen,
         # C2 -- appeal approval reverses a ban or timeout on Discord
         "moderation_reverse": _dispatch_moderation_reverse,
+        # Community flight events (desktop app -> Discord)
+        "flight_event": _dispatch_flight_event,
         # Legacy aliases (processed for backwards compatibility)
         "announce_dispatch": _dispatch_announcement,
         "beta_role_change": _dispatch_legacy_beta,
@@ -512,6 +515,22 @@ async def _dispatch_legacy_ticket(bot: commands.Bot, payload: dict[str, Any]) ->
     else:
         # Legacy no-op: the admin panel already updated the DB directly.
         logger.info("Legacy ticket_state_change with action=%r (no-op)", action)
+
+
+async def _dispatch_flight_event(bot: commands.Bot, payload: dict[str, Any]) -> dict[str, Any]:
+    """Post a takeoff/landing event to the community flights channel.
+
+    Payload comes from the OPS ROOM desktop app (via the admin API). It is
+    flight-data only: callsign, aircraft, route, and landing metrics. The
+    Discord user is resolved by the admin API into ``discord_id`` before the
+    action is enqueued, so the bot never stores or sends anything personal.
+
+    Landing events are also mirrored into ``flight_logs`` so they feed the
+    leaderboard and ``/logbook``. Takeoff/landing de-duplication is keyed on
+    ``flight_id`` + ``event_type`` so a retried action never double-posts.
+    """
+    from bot.services.community import dispatch_flight_event
+    return await dispatch_flight_event(bot, payload)
 
 
 # ---------------------------------------------------------------------------

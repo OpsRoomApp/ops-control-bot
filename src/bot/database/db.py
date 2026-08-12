@@ -190,7 +190,52 @@ CREATE TABLE IF NOT EXISTS flight_logs (
     duration_min    REAL,
     landing_rate    REAL,
     score           REAL,
+    registration    TEXT,
+    touchdown_g     REAL,
+    visibility      TEXT    NOT NULL DEFAULT 'discord',
     submitted_at    TEXT    NOT NULL
+);
+
+-- Community flight events (desktop app -> admin-api -> bot -> Discord).
+-- One row per takeoff/landing notification so the bot can de-duplicate and
+-- the admin API can serve the website leaderboard / live map.
+CREATE TABLE IF NOT EXISTS community_flights (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    discord_id      INTEGER NOT NULL,
+    flight_id       TEXT,
+    event_type      TEXT    NOT NULL,
+    callsign        TEXT,
+    aircraft        TEXT,
+    registration    TEXT,
+    origin          TEXT,
+    origin_name     TEXT,
+    destination     TEXT,
+    destination_name TEXT,
+    landing_rate    REAL,
+    touchdown_g     REAL,
+    touchdown_speed REAL,
+    duration_min    REAL,
+    score           REAL,
+    visibility      TEXT    NOT NULL DEFAULT 'discord',
+    created_at      TEXT    NOT NULL
+);
+
+-- Live, in-flight community feed for the website map. One row per active
+-- Discord user (their current flight). Rows are pruned when stale.
+CREATE TABLE IF NOT EXISTS community_live (
+    discord_id      INTEGER PRIMARY KEY,
+    callsign        TEXT,
+    aircraft        TEXT,
+    registration    TEXT,
+    origin          TEXT,
+    destination     TEXT,
+    phase           TEXT,
+    latitude        REAL,
+    longitude       REAL,
+    altitude_ft     REAL,
+    ground_speed    REAL,
+    visibility      TEXT    NOT NULL DEFAULT 'discord',
+    last_seen       TEXT    NOT NULL
 );
 
 -- Desktop app events (prepared for OPS ROOM integration)
@@ -572,6 +617,10 @@ async def run_migrations() -> None:
         "ALTER TABLE announcements ADD COLUMN scheduled_at TEXT",
         "ALTER TABLE announcements ADD COLUMN status TEXT NOT NULL DEFAULT sent",
         "ALTER TABLE announcements ADD COLUMN template_name TEXT",
+        # community flight events (desktop app -> Discord)
+        "ALTER TABLE flight_logs ADD COLUMN registration TEXT",
+        "ALTER TABLE flight_logs ADD COLUMN touchdown_g REAL",
+        "ALTER TABLE flight_logs ADD COLUMN visibility TEXT NOT NULL DEFAULT 'discord'",
     ]
     for stmt in migrations:
         try:

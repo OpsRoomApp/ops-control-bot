@@ -174,6 +174,21 @@ class Config:
         default_factory=lambda: _env_int("VATSIM_TRACKER_POLL_SECONDS", 60)
     )
 
+    # -- OPS ROOM community flight events (desktop app -> Discord) --
+    # Channel the bot posts takeoff/landing flight events to. Shares the
+    # default with the VATSIM tracker so both sources land in the same feed.
+    flights_channel_id: int = field(
+        default_factory=lambda: _env_int("FLIGHTS_CHANNEL_ID", 1533447716359639131)
+    )
+    # Master switch for the whole desktop-app community integration.
+    community_enabled: bool = field(
+        default_factory=lambda: _env_bool("COMMUNITY_ENABLED", True)
+    )
+    # Public community visibility (appears on the website map + leaderboard).
+    community_public_by_default: bool = field(
+        default_factory=lambda: _env_bool("COMMUNITY_PUBLIC_BY_DEFAULT", False)
+    )
+
     # -- Admin API integration (B1 hosted transcripts, C4 appeals) --
     admin_api_base_url: str = field(
         default_factory=lambda: _env_str(
