@@ -56,7 +56,7 @@ Keep public chat in English so everyone can participate. Other languages are wel
 Moderator decisions are final. If you disagree, use the appeal process — do not argue in public channels.
 
 **11. Verify to participate.**
-Complete verification in the #verify channel to unlock full server access.
+Complete verification in the #verification channel to unlock full server access.
 
 **12. Report, don't retaliate.**
 If someone breaks a rule, report it to staff. Do not escalate or engage in public arguments.
