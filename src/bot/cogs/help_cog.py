@@ -68,6 +68,7 @@ class HelpCog(commands.Cog):
             ("/airport-status <ICAO>", "One-stop airport snapshot: VATSIM + NOTAMs + weather"),
             ("/vatsim-set <CID>", "Link your VATSIM CID (auto takeoff/landing posts)"),
             ("/vatsim-unset", "Unlink your VATSIM CID"),
+            ("/vatsim-linked", "Show your linked VATSIM CID"),
         ]
         embed.add_field(
             name="Flight Operations & VATSIM",
@@ -94,7 +95,7 @@ class HelpCog(commands.Cog):
             ("/weather taf <ICAO>", "Terminal Area Forecast"),
             ("/atis <ICAO>", "Live VATSIM ATIS text"),
             ("/notam-external <ICAO>", "Current NOTAMs for an airport"),
-            ("/notams geo|fdc|checklist|search", "Live FAA NMS NOTAMs — area, TFRs/FDCs, checklists, free text"),
+            ("/notams icao|geo|fdc|checklist|search", "Live FAA NMS NOTAMs — by airport, area, TFRs/FDCs, checklists, free text"),
             ("/sigmet", "Active aviation weather advisories"),
         ]
         embed.add_field(
@@ -113,6 +114,9 @@ class HelpCog(commands.Cog):
             ("/profile", "Your user profile"),
             ("/profile-set", "Update profile (simulator / network)"),
             ("/roles", "Pick your simulator and network roles"),
+            ("/leaderboard [period]", "Community flight leaderboard (hours, landings, landing rate)"),
+            ("/flight-visibility <discord|public|hidden>", "Choose where your flights appear"),
+            ("/link-app", "Get a one-time pairing code for the desktop app"),
         ]
         embed.add_field(
             name="Community & Profile",
@@ -155,6 +159,8 @@ class HelpCog(commands.Cog):
                 ("/unmute <user>", "Remove the Muted role"),
                 ("/modcase <user>", "A user's moderation history"),
                 ("/notam add|list|remove", "Internal NOTAM management"),
+                ("/verify-setup", "Post or refresh the persistent Verify button"),
+                ("/scambait-warning", "Post the restricted-channel warning in the scambait channel"),
             ]
             embed.add_field(
                 name="Staff Commands",
