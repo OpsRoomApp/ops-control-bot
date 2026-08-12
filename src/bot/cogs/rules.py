@@ -17,6 +17,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from bot.config import config
 from bot.database import get_db
 from bot.utils.helpers import utc_now_iso
 from bot.utils.permissions import require_owner
@@ -25,6 +26,8 @@ from bot.services.audit import log_event
 logger = logging.getLogger("ops_control.cogs.rules")
 
 DEFAULT_RULES = """
+# :clipboard: SERVER RULES
+
 **1. Be respectful.**
 No harassment, hate speech, discrimination, or personal attacks. Treat others how you'd want to be treated.
 
@@ -56,7 +59,7 @@ Keep public chat in English so everyone can participate. Other languages are wel
 Moderator decisions are final. If you disagree, use the appeal process — do not argue in public channels.
 
 **11. Verify to participate.**
-Complete verification in the #verification channel to unlock full server access.
+Complete verification in {verify_channel} to unlock full server access.
 
 **12. Report, don't retaliate.**
 If someone breaks a rule, report it to staff. Do not escalate or engage in public arguments.
@@ -82,6 +85,11 @@ class RulesCog(commands.Cog):
         row = await cursor.fetchone()
         return row["value"] if row else DEFAULT_RULES
 
+    def _verify_mention(self) -> str:
+        if config.verify_channel_id:
+            return f"<#{config.verify_channel_id}>"
+        return "#verification"
+
     @app_commands.command(
         name="rules",
         description="View the OPS ROOM community rules.",
@@ -89,15 +97,10 @@ class RulesCog(commands.Cog):
     async def rules(self, interaction: discord.Interaction) -> None:
         """Post the community rules to the channel (visible to everyone)."""
         content = await self._load_rules(interaction.guild_id)
-        embed = discord.Embed(
-            title=":clipboard: SERVER RULES",
-            description=content,
-            color=0x2563EB,
-        )
-        embed.set_footer(text="OPS ROOM Operations | Maintained by the owner")
+        content = content.replace("{verify_channel}", self._verify_mention())
         await interaction.response.defer(ephemeral=True)
         if interaction.channel is not None:
-            await interaction.channel.send(embed=embed)
+            await interaction.channel.send(content=content)
         await interaction.followup.send(
             "Community rules posted to this channel.",
             ephemeral=True,
