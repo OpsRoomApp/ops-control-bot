@@ -26,7 +26,7 @@ from discord.ext import commands, tasks
 from bot.api import fetch_vatsim_pilots_by_cids
 from bot.config import config
 from bot.database import get_db
-from bot.utils.helpers import utc_now_iso
+from bot.utils.helpers import resolve_text_channel, utc_now_iso
 from bot.services.audit import log_event
 
 logger = logging.getLogger("ops_control.vatsim_tracker")
@@ -225,12 +225,8 @@ class VatsimTracker(commands.Cog):
                 logger.warning("VATSIM tracker feed fetch failed: %s", exc)
                 return
 
-            channel = self.bot.get_channel(config.vatsim_tracker_channel_id)
-            if channel is None or not isinstance(channel, discord.TextChannel):
-                logger.warning(
-                    "VATSIM tracker channel %s not found",
-                    config.vatsim_tracker_channel_id,
-                )
+            channel = await resolve_text_channel(self.bot, config.vatsim_tracker_channel_id)
+            if channel is None:
                 return
 
             now_iso = utc_now_iso()

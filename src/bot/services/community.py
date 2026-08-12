@@ -18,7 +18,7 @@ import discord
 
 from bot.config import config
 from bot.database import get_db
-from bot.utils.helpers import utc_now_iso
+from bot.utils.helpers import resolve_text_channel, utc_now_iso
 
 if TYPE_CHECKING:
     from discord.ext import commands
@@ -158,10 +158,7 @@ async def dispatch_flight_event(bot: commands.Bot, payload: dict[str, Any]) -> d
     await _record_event(payload)
 
     # Post to the flights channel (or DM the user if no channel is set).
-    channel = bot.get_channel(config.flights_channel_id)
-    if channel is None or not isinstance(channel, discord.TextChannel):
-        logger.warning("Flights channel %s not found", config.flights_channel_id)
-        channel = None
+    channel = await resolve_text_channel(bot, config.flights_channel_id)
 
     if event_type == "takeoff":
         embed = _takeoff_embed(payload)
