@@ -1,1 +1,1 @@
-"""OPS CONTROL — Core package."""
+"""OPS CONTROL - Core package."""

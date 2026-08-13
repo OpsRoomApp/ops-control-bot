@@ -141,21 +141,98 @@ async def _mirror_flight_log(payload: dict[str, Any]) -> int | None:
     return int(row["id"]) if row else None
 
 
+async def _descent_briefing_dm(bot: commands.Bot, payload: dict[str, Any]) -> None:
+    """#104: DM the user a compact destination briefing at top-of-descent.
+
+    Best-effort: any missing data (NOAA down, no NOTAMs) degrades to whatever
+    is available; nothing here can ever crash the dispatcher.
+    """
+    discord_id = int(payload.get("discord_id") or 0)
+    destination = str(payload.get("destination") or "").strip().upper()
+    callsign = str(payload.get("callsign") or "N/A")
+    if discord_id <= 0 or len(destination) != 4:
+        return
+    try:
+        user = await bot.fetch_user(discord_id)
+    except Exception:
+        return
+    if user is None:
+        return
+
+    metar = taf = notams = None
+    try:
+        from bot.services.noaa_weather import fetch_noaa_metar, fetch_noaa_taf
+
+        metar = await fetch_noaa_metar(destination)
+        taf = await fetch_noaa_taf(destination)
+    except Exception:
+        logger.exception("Descent briefing weather fetch failed for %s", destination)
+    try:
+        from bot.services.notam_service import fetch_notams
+
+        notams = await fetch_notams(destination)
+    except Exception:
+        logger.debug("Descent briefing NOTAM fetch failed for %s", destination)
+
+    lines: list[str] = []
+    if metar and metar.get("raw_text"):
+        lines.append(
+            f"**METAR {destination}** {metar.get('flight_category') or ''}\n"
+            f"```{metar.get('raw_text')}```"
+        )
+    else:
+        lines.append(f"**METAR {destination}** - unavailable")
+    if taf and taf.get("raw_text"):
+        lines.append(f"**TAF {destination}**\n```{taf.get('raw_text')}```")
+    else:
+        lines.append(f"**TAF {destination}** - unavailable")
+    if notams:
+        active = [n for n in notams if str(n.get("type") or "").upper() in ("ACT", "ACTIVE", "RUNWAY CLOSED", "AIRPORT") or n.get("text")]
+        active = active[:8]
+        if active:
+            notam_lines = []
+            for n in active:
+                text = str(n.get("text") or n.get("notam") or "").strip()
+                notam_lines.append(f"• {text[:160]}" if text else "• (no text)")
+            lines.append(f"**NOTAMs {destination}** ({len(active)})\n" + "\n".join(notam_lines))
+        else:
+            lines.append(f"**NOTAMs {destination}** - none active")
+    else:
+        lines.append(f"**NOTAMs {destination}** - unavailable")
+
+    embed = discord.Embed(
+        title=f"📉 Descent briefing - {callsign}",
+        description="\n\n".join(lines),
+        color=0x38BDF8,
+        timestamp=discord.utils.utcnow(),
+    )
+    embed.set_footer(text="OPS ROOM · Top of descent")
+    try:
+        await user.send(embed=embed)
+    except Exception:
+        logger.debug("Descent briefing DM to %s failed (DMs closed?)", discord_id)
+
+
 async def dispatch_flight_event(bot: commands.Bot, payload: dict[str, Any]) -> dict[str, Any]:
-    """Dispatch a single takeoff/landing event (idempotent per flight+event)."""
+    """Dispatch a single takeoff/landing/descent event (idempotent)."""
     if not config.community_enabled:
         return {"ok": True, "skipped": "community disabled"}
 
     event_type = str(payload.get("event_type") or "").lower()
-    if event_type not in ("takeoff", "landing"):
+    if event_type not in ("takeoff", "landing", "descent"):
         raise ValueError(f"Unsupported flight event type: {event_type!r}")
 
     flight_id = str(payload.get("flight_id") or "")
     if await _already_posted(flight_id, event_type):
-        logger.info("flight_event %s/%s already posted — skipping", flight_id, event_type)
+        logger.info("flight_event %s/%s already posted - skipping", flight_id, event_type)
         return {"ok": True, "skipped": "already_posted"}
 
     await _record_event(payload)
+
+    # #104: descent events are a private DM briefing, not a channel post.
+    if event_type == "descent":
+        await _descent_briefing_dm(bot, payload)
+        return {"ok": True, "event": event_type}
 
     # Post to the flights channel (or DM the user if no channel is set).
     channel = await resolve_text_channel(bot, config.flights_channel_id)
@@ -186,7 +263,7 @@ async def dispatch_flight_event(bot: commands.Bot, payload: dict[str, Any]) -> d
 
 def _takeoff_embed(payload: dict[str, Any]) -> discord.Embed:
     embed = discord.Embed(
-        title=f"✈️ Takeoff — {str(payload.get('callsign') or 'N/A')}",
+        title=f"✈️ Takeoff - {str(payload.get('callsign') or 'N/A')}",
         color=TAKEOFF_COLOR,
         timestamp=discord.utils.utcnow(),
     )
@@ -195,7 +272,7 @@ def _takeoff_embed(payload: dict[str, Any]) -> discord.Embed:
     if payload.get("origin") and payload.get("destination"):
         embed.add_field(
             name="Distance",
-            value=f"{payload.get('distance_nm')} NM" if payload.get("distance_nm") else "—",
+            value=f"{payload.get('distance_nm')} NM" if payload.get("distance_nm") else "-",
             inline=True,
         )
     embed.set_footer(text="OPS ROOM Flight Watch")
@@ -222,7 +299,7 @@ def _landing_embed(payload: dict[str, Any]) -> discord.Embed:
         lines.append("**" + " · ".join(metrics) + "**")
 
     embed = discord.Embed(
-        title=f"🛬 Landing — {str(payload.get('callsign') or 'N/A')}",
+        title=f"🛬 Landing - {str(payload.get('callsign') or 'N/A')}",
         description="\n".join(lines),
         color=LANDING_COLOR,
         timestamp=discord.utils.utcnow(),

@@ -1,1 +1,1 @@
-"""OPS CONTROL — Utils package."""
+"""OPS CONTROL - Utils package."""

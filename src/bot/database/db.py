@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS pending_actions (
 """
 
 SCHEMA = f"""
--- Users table — stores Discord user information
+-- Users table - stores Discord user information
 CREATE TABLE IF NOT EXISTS users (
     id              INTEGER PRIMARY KEY,   -- Discord user ID
     username        TEXT    NOT NULL,
@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS guild_settings (
     PRIMARY KEY (guild_id, key)
 );
 
--- NOTAMs — Notice to Airmen / operations notices
+-- NOTAMs - Notice to Airmen / operations notices
 CREATE TABLE IF NOT EXISTS notams (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     title           TEXT    NOT NULL,
@@ -92,7 +92,7 @@ CREATE TABLE IF NOT EXISTS notams (
     is_active       INTEGER NOT NULL DEFAULT 1
 );
 
--- Announcements — formatted broadcast messages
+-- Announcements - formatted broadcast messages
 CREATE TABLE IF NOT EXISTS announcements (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     title           TEXT    NOT NULL,
@@ -105,7 +105,7 @@ CREATE TABLE IF NOT EXISTS announcements (
     message_id      INTEGER
 );
 
--- Log — audit trail
+-- Log - audit trail
 CREATE TABLE IF NOT EXISTS logs (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     event_type      TEXT    NOT NULL,
@@ -406,13 +406,15 @@ CREATE TABLE IF NOT EXISTS vatsim_links (
 
 -- v0.25.56 - VATSIM tracker per-CID state (dedupe notifications across restarts)
 CREATE TABLE IF NOT EXISTS vatsim_tracking (
-    vatsim_cid  INTEGER PRIMARY KEY,
-    callsign    TEXT,
-    airborne    INTEGER NOT NULL DEFAULT 0,
-    departure   TEXT,
-    arrival     TEXT,
-    aircraft    TEXT,
-    last_seen   TEXT
+    vatsim_cid      INTEGER PRIMARY KEY,
+    callsign        TEXT,
+    airborne        INTEGER NOT NULL DEFAULT 0,
+    altitude        INTEGER,
+    ground_ref_alt  INTEGER,
+    departure       TEXT,
+    arrival         TEXT,
+    aircraft        TEXT,
+    last_seen       TEXT
 );
 
 """
@@ -488,7 +490,7 @@ async def migrate_pending_actions(db: aiosqlite.Connection) -> None:
     """
     columns = await _table_columns(db)
     if not columns:
-        # Table does not exist yet — canonical CREATE already ran in SCHEMA.
+        # Table does not exist yet - canonical CREATE already ran in SCHEMA.
         await db.execute(PENDING_ACTIONS_CANONICAL)
         await db.commit()
         logger.info("pending_actions table created (canonical).")
@@ -581,7 +583,7 @@ async def run_migrations() -> None:
     try:
         await migrate_pending_actions(db)
     except Exception:
-        logger.exception("pending_actions migration failed — continuing with other migrations")
+        logger.exception("pending_actions migration failed - continuing with other migrations")
 
     # 2. Column additions (tolerate duplicate-column errors on fresh DBs)
     migrations = [
@@ -594,6 +596,9 @@ async def run_migrations() -> None:
         "ALTER TABLE events ADD COLUMN route TEXT",
         "ALTER TABLE events ADD COLUMN version TEXT",
         "ALTER TABLE simbrief_accounts ADD COLUMN static_id TEXT",
+        # VATSIM tracker: field-elevation reference for MSL-agnostic takeoff detection
+        "ALTER TABLE vatsim_tracking ADD COLUMN altitude INTEGER",
+        "ALTER TABLE vatsim_tracking ADD COLUMN ground_ref_alt INTEGER",
         "ALTER TABLE tickets ADD COLUMN channel_id INTEGER",
         "ALTER TABLE tickets ADD COLUMN subject TEXT",
         "ALTER TABLE tickets ADD COLUMN assigned_to INTEGER",
@@ -628,7 +633,7 @@ async def run_migrations() -> None:
             await db.commit()
             logger.info("Migration applied: %s", stmt[:60])
         except Exception:
-            # Column already exists — safe to skip
+            # Column already exists - safe to skip
             pass
     logger.info("Migrations complete.")
 

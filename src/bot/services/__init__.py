@@ -1,1 +1,1 @@
-"""OPS CONTROL — Services package."""
+"""OPS CONTROL - Services package."""

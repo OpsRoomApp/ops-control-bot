@@ -24,7 +24,7 @@ from pathlib import Path
 _SRC = Path(__file__).resolve().parents[1] / "src"
 sys.path.insert(0, str(_SRC))
 
-# IMPORTANT: set DATABASE_PATH BEFORE importing bot modules — the frozen
+# IMPORTANT: set DATABASE_PATH BEFORE importing bot modules - the frozen
 # config is read once at import time. All tests share one temp DB file;
 # each test resets the queue table in asyncSetUp.
 _TMPDIR = tempfile.mkdtemp(prefix="ops_test_dispatcher_")
@@ -46,7 +46,7 @@ from bot.services import pending_actions as pa  # noqa: E402
 
 
 def _make_channel(channel_id: int, name: str = "announcements"):
-    """Return a mock TextChannel that passes isinstance(TextChannel) — the
+    """Return a mock TextChannel that passes isinstance(TextChannel) - the
     dispatcher validates channel types before sending."""
     ch = mock.Mock(spec=discord.TextChannel)
     ch.id = channel_id

@@ -52,7 +52,7 @@ class ReleasesCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
-    # v0.25.55 (B5) — Changelog auto-announce background task
+    # v0.25.55 (B5) - Changelog auto-announce background task
     _last_announced_tag: str | None = None
 
     async def cog_load(self):

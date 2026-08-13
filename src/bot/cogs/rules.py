@@ -47,7 +47,7 @@ You must comply with Discord's Terms of Service and Community Guidelines at all 
 Use the right channel for the right subject. Support and bug reports go in their dedicated channels, not general chat.
 
 **7. No doxxing.**
-Do not share anyone's personal information without their explicit consent — including your own.
+Do not share anyone's personal information without their explicit consent - including your own.
 
 **8. No begging.**
 Do not ask for free products, keys, roles, or perks, and do not DM staff for them.
@@ -56,7 +56,7 @@ Do not ask for free products, keys, roles, or perks, and do not DM staff for the
 Keep public chat in English so everyone can participate. Other languages are welcome in DMs.
 
 **10. Staff have the final say.**
-Moderator decisions are final. If you disagree, use the appeal process — do not argue in public channels.
+Moderator decisions are final. If you disagree, use the appeal process - do not argue in public channels.
 
 **11. Verify to participate.**
 Complete verification in {verify_channel} to unlock full server access.

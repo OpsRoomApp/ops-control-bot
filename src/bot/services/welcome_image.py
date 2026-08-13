@@ -102,11 +102,11 @@ class WelcomeImageGenerator:
             draw.text((x, y), ch, font=name_font, anchor="la", **bold_kwargs)
             x += char_width + CHAR_SPACING
 
-        # --- Render DATE — format: DD MMM YYYY (e.g. 31 JUL 2026) ---
+        # --- Render DATE - format: DD MMM YYYY (e.g. 31 JUL 2026) ---
         date_str = now.strftime("%d %b %Y").upper()
         draw.text(DATE_POSITION, date_str, font=dt_font, anchor="la", **bold_kwargs)
 
-        # --- Render TIME — format: HH:MMZ (e.g. 16:25Z) ---
+        # --- Render TIME - format: HH:MMZ (e.g. 16:25Z) ---
         time_str = now.strftime("%H:%M") + "Z"
         draw.text(TIME_POSITION, time_str, font=dt_font, anchor="la", **bold_kwargs)
 

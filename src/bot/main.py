@@ -1,5 +1,5 @@
 """
-OPS CONTROL — Main entry point.
+OPS CONTROL - Main entry point.
 
 Initialises logging, database, and starts the Discord bot.
 Run with: python -m bot.main

@@ -49,7 +49,7 @@ async def generate_route(
     Fallback: improved local database engine (always available).
 
     Raises InvalidAircraft / InvalidDuration / InvalidICAO / NoRouteFound.
-    ProviderUnavailable is never raised to callers — it triggers fallback.
+    ProviderUnavailable is never raised to callers - it triggers fallback.
     """
     from bot.services.routes.fallback import FallbackProvider
 
@@ -67,14 +67,14 @@ async def generate_route(
         except (InvalidAircraft, InvalidDuration, InvalidICAO):
             raise
         except NoRouteFound as exc:
-            logger.warning("Where2Fly: no suitable route (%s) — falling back", exc)
+            logger.warning("Where2Fly: no suitable route (%s) - falling back", exc)
         except ProviderUnavailable as exc:
-            logger.warning("Where2Fly unavailable (%s) — falling back", exc)
+            logger.warning("Where2Fly unavailable (%s) - falling back", exc)
         except Exception as exc:
-            logger.exception("Where2Fly provider error — falling back")
+            logger.exception("Where2Fly provider error - falling back")
             logger.warning("Where2Fly error: %s", exc)
     else:
-        logger.info("Where2Fly disabled or no token — using local fallback database")
+        logger.info("Where2Fly disabled or no token - using local fallback database")
 
     try:
         result = await fallback.generate(aircraft_input, duration_input, origin, destination, filters=filters)

@@ -56,7 +56,7 @@ class BugReportModal(discord.ui.Modal, title="Report a Bug (Legacy)"):
 
 
 class BugCog(commands.Cog):
-    """DEPRECATED: Bug reporting system — use ticket_system.py instead."""
+    """DEPRECATED: Bug reporting system - use ticket_system.py instead."""
 
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
@@ -75,5 +75,5 @@ class BugCog(commands.Cog):
 
 
 async def setup(bot: commands.Bot) -> None:
-    logger.warning("BugCog is deprecated — not loaded. Use ticket_system.py instead.")
+    logger.warning("BugCog is deprecated - not loaded. Use ticket_system.py instead.")
     await bot.add_cog(BugCog(bot))

@@ -1,1 +1,1 @@
-"""OPS CONTROL — Models package."""
+"""OPS CONTROL - Models package."""

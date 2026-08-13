@@ -338,7 +338,7 @@ def build_simbrief_url(
     """Build a SimBrief Options URL (prefilled flight plan form).
 
     Uses the current dispatch.simbrief.com/options/custom endpoint.
-    `username` is accepted for API compatibility only — the Options URL
+    `username` is accepted for API compatibility only - the Options URL
     does not document a userid parameter and it is never sent.
     """
     from bot.services.simbrief_url import build_simbrief_options_url

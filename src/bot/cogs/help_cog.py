@@ -45,7 +45,7 @@ class HelpCog(commands.Cog):
         is_staff = is_owner or is_admin or is_mod
 
         embed = discord.Embed(
-            title="OPS CONTROL — everything you can do here",
+            title="OPS CONTROL - everything you can do here",
             description=(
                 "Hey! Here's what I can do, grouped by what it's for. "
                 "**< >** means you type a value (like an ICAO code); "
@@ -72,7 +72,7 @@ class HelpCog(commands.Cog):
         ]
         embed.add_field(
             name="Flight Operations & VATSIM",
-            value="\n".join(f"`{cmd}` — {desc}" for cmd, desc in flight_commands),
+            value="\n".join(f"`{cmd}` - {desc}" for cmd, desc in flight_commands),
             inline=False,
         )
 
@@ -80,11 +80,11 @@ class HelpCog(commands.Cog):
         simbrief_commands = [
             ("/link-simbrief <username> [static_id]", "Link your Discord account to SimBrief"),
             ("/ofp [username]", "Fetch your latest Operational Flight Plan"),
-            ("/randomroute", "Spin up a random route — pick aircraft, time, region, conditions"),
+            ("/randomroute", "Spin up a random route - pick aircraft, time, region, conditions"),
         ]
         embed.add_field(
             name="SimBrief & Flight Planning",
-            value="\n".join(f"`{cmd}` — {desc}" for cmd, desc in simbrief_commands),
+            value="\n".join(f"`{cmd}` - {desc}" for cmd, desc in simbrief_commands),
             inline=False,
         )
 
@@ -95,12 +95,12 @@ class HelpCog(commands.Cog):
             ("/weather taf <ICAO>", "Terminal Area Forecast"),
             ("/atis <ICAO>", "Live VATSIM ATIS text"),
             ("/notam-external <ICAO>", "Current NOTAMs for an airport"),
-            ("/notams icao|geo|fdc|checklist|search", "Live FAA NMS NOTAMs — by airport, area, TFRs/FDCs, checklists, free text"),
+            ("/notams icao|geo|fdc|checklist|search", "Live FAA NMS NOTAMs - by airport, area, TFRs/FDCs, checklists, free text"),
             ("/sigmet", "Active aviation weather advisories"),
         ]
         embed.add_field(
             name="Weather & Briefing",
-            value="\n".join(f"`{cmd}` — {desc}" for cmd, desc in weather_commands),
+            value="\n".join(f"`{cmd}` - {desc}" for cmd, desc in weather_commands),
             inline=False,
         )
 
@@ -120,7 +120,7 @@ class HelpCog(commands.Cog):
         ]
         embed.add_field(
             name="Community & Profile",
-            value="\n".join(f"`{cmd}` — {desc}" for cmd, desc in community_commands),
+            value="\n".join(f"`{cmd}` - {desc}" for cmd, desc in community_commands),
             inline=False,
         )
 
@@ -139,7 +139,7 @@ class HelpCog(commands.Cog):
         ]
         embed.add_field(
             name="Tools & Information",
-            value="\n".join(f"`{cmd}` — {desc}" for cmd, desc in tools_commands),
+            value="\n".join(f"`{cmd}` - {desc}" for cmd, desc in tools_commands),
             inline=False,
         )
 
@@ -164,7 +164,7 @@ class HelpCog(commands.Cog):
             ]
             embed.add_field(
                 name="Staff Commands",
-                value="\n".join(f"`{cmd}` — {desc}" for cmd, desc in staff_commands),
+                value="\n".join(f"`{cmd}` - {desc}" for cmd, desc in staff_commands),
                 inline=False,
             )
 
@@ -182,11 +182,11 @@ class HelpCog(commands.Cog):
             ]
             embed.add_field(
                 name="Admin / Owner Commands",
-                value="\n".join(f"`{cmd}` — {desc}" for cmd, desc in owner_commands),
+                value="\n".join(f"`{cmd}` - {desc}" for cmd, desc in owner_commands),
                 inline=False,
             )
 
-        embed.set_footer(text="Stuck on something? /support gets you a human. — OPS ROOM")
+        embed.set_footer(text="Stuck on something? /support gets you a human. - OPS ROOM")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 

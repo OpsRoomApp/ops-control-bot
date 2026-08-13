@@ -522,7 +522,7 @@ async def _notify_staff_retry(channel: discord.TextChannel, ticket_number: int, 
         await channel.send(
             content=(
                 f"Transcript archiving failed ({error}). "
-                "The ticket has been preserved — a staff member can retry the close."
+                "The ticket has been preserved - a staff member can retry the close."
             )
         )
     except Exception:

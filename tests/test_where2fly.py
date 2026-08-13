@@ -88,7 +88,7 @@ class DurationTests(unittest.TestCase):
 
 
 class Where2FlyProviderTests(unittest.IsolatedAsyncioTestCase):
-    """Construct the provider with explicit overrides — the frozen global
+    """Construct the provider with explicit overrides - the frozen global
     config may have Where2Fly disabled when the full suite runs together.
     """
 
@@ -369,7 +369,7 @@ class AircraftCodeRegressionTests(unittest.TestCase):
 
 
 class FooterAttributionTests(unittest.TestCase):
-    """The Where2Fly attribution must be a clickable Markdown link — shown
+    """The Where2Fly attribution must be a clickable Markdown link - shown
     exactly once, as a "Powered by" embed field (Discord footers do not
     render Markdown links). The footer stays plain text; no duplication.
     """

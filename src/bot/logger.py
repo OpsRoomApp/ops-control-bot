@@ -68,7 +68,7 @@ def setup_logging() -> logging.Logger:
     for noisy in ("discord.gateway", "discord.http", "aiosqlite", "aiohttp"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
-    root_logger.info("Logging initialised — log file: %s", log_path)
+    root_logger.info("Logging initialised - log file: %s", log_path)
     return root_logger
 
 

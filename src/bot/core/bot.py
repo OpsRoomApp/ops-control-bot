@@ -94,7 +94,7 @@ class OpsControlBot(commands.Bot):
         self._startup_complete.set()
 
     async def close(self) -> None:
-        """Graceful shutdown — close DB and API connections, clean up."""
+        """Graceful shutdown - close DB and API connections, clean up."""
         logger.info("Shutting down OPS CONTROL...")
 
         # Log shutdown to Discord
@@ -145,7 +145,7 @@ class OpsControlBot(commands.Bot):
             await run_migrations()
             logger.info("Database initialised.")
         except Exception:
-            logger.exception("Failed to initialise database — continuing")
+            logger.exception("Failed to initialise database - continuing")
 
     async def _load_cogs(self) -> None:
         """Auto-discover and load all Cog modules from bot/cogs/."""

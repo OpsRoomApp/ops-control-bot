@@ -154,7 +154,7 @@ class SupportTicketModal(discord.ui.Modal, title="Create Support Ticket"):
             view = TicketActionView(ticket_num)
             # Mention the ticket creator + Support Dispatch role only.
             # AllowedMentions requires Snowflake objects (discord.Object),
-            # not raw ints — discord.py reads `.id` off each entry.
+            # not raw ints - discord.py reads `.id` off each entry.
             allowed = discord.AllowedMentions(
                 users=[interaction.user],
                 roles=[discord.Object(SUPPORT_DISPATCH)] if SUPPORT_DISPATCH else [],
@@ -403,7 +403,7 @@ class EscalateToSupportView(discord.ui.View):
 
 
 
-# v0.25.55 (B1) — Close-reason prompt shown to staff before closing a ticket
+# v0.25.55 (B1) - Close-reason prompt shown to staff before closing a ticket
 class CloseReasonModal(discord.ui.Modal, title="Close Ticket"):
     """Prompt staff for a close reason before finalising the ticket."""
 

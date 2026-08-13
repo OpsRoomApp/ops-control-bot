@@ -113,9 +113,9 @@ async def process_pending_actions(bot: commands.Bot) -> int:
         )
         await db.commit()
         if claim.rowcount == 0:
-            # Another dispatcher instance claimed this action — skip it.
+            # Another dispatcher instance claimed this action - skip it.
             logger.info(
-                "Pending action %s claimed by another process — skipping", action_id
+                "Pending action %s claimed by another process - skipping", action_id
             )
             continue
 
@@ -552,7 +552,7 @@ async def pending_actions_loop(bot: commands.Bot) -> None:
             logger.info("Pending action dispatcher stopped.")
             raise
         except Exception:
-            logger.exception("Error in pending actions loop — continuing")
+            logger.exception("Error in pending actions loop - continuing")
 
         # Poll in short slices so shutdown is responsive.
         for _ in range(interval):

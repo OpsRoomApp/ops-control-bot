@@ -25,7 +25,7 @@ Buttons:
 
 Attribution: "Powered by Where2Fly" is shown exactly once, as the clickable
 hyperlink field (Discord footers do not render Markdown links). The locally
-suggested operator/callsign are no longer displayed — they read as vague and
+suggested operator/callsign are no longer displayed - they read as vague and
 were never a claim of a real scheduled service.
 """
 
@@ -73,14 +73,14 @@ CODE_LETTER_DEFAULTS: dict[str, str] = {
 }
 
 AIRCRAFT_OPTIONS: list[tuple[str, str, str]] = [
-    ("GA", "Light GA — C172 / PA28", "Small pistons, short hops"),
-    ("GAT", "Turbo GA — Bonanza / Caravan", "Fast pistons and light turboprops"),
-    ("GTP", "Heavy Turboprop — AT72 / Q400 / PC-12", "Regional turboprops"),
-    ("JS", "Regional Jet — CRJ / E190 / PC-24", "Regional jets"),
-    ("JM", "Narrow Body — B737 / A320", "The classic airliner"),
-    ("JML", "Mid Wide Body — B757 / B767", "Mid-size wide bodies"),
-    ("JL", "Large Wide Body — B777 / B787 / A350", "Long-haul wide bodies"),
-    ("JXL", "Super Heavy — B747 / A380", "The big ones"),
+    ("GA", "Light GA - C172 / PA28", "Small pistons, short hops"),
+    ("GAT", "Turbo GA - Bonanza / Caravan", "Fast pistons and light turboprops"),
+    ("GTP", "Heavy Turboprop - AT72 / Q400 / PC-12", "Regional turboprops"),
+    ("JS", "Regional Jet - CRJ / E190 / PC-24", "Regional jets"),
+    ("JM", "Narrow Body - B737 / A320", "The classic airliner"),
+    ("JML", "Mid Wide Body - B757 / B767", "Mid-size wide bodies"),
+    ("JL", "Large Wide Body - B777 / B787 / A350", "Long-haul wide bodies"),
+    ("JXL", "Super Heavy - B747 / A380", "The big ones"),
 ]
 
 DURATION_OPTIONS: list[str] = [
@@ -322,8 +322,8 @@ class RoutePreferencesView(discord.ui.View):
     def summary_embed(self) -> discord.Embed:
         """Live summary of the current preferences."""
         lines = [
-            f"**Aircraft:** {self.aircraft.values[0] if self.aircraft.values else '— not chosen yet —'}",
-            f"**Flight time:** {self.duration.values[0] if self.duration.values else '— not chosen yet —'}",
+            f"**Aircraft:** {self.aircraft.values[0] if self.aircraft.values else '- not chosen yet -'}",
+            f"**Flight time:** {self.duration.values[0] if self.duration.values else '- not chosen yet -'}",
             f"**Region:** {self.region.values[0] if self.region.values else 'Anywhere'}",
         ]
         if self.conditions.values:
@@ -339,7 +339,7 @@ class RoutePreferencesView(discord.ui.View):
         if self.runway_min:
             lines.append(f"**Min runway:** {int(self.runway_min):,} ft")
         return discord.Embed(
-            title="Random route — pick your preferences",
+            title="Random route - pick your preferences",
             description="\n".join(lines),
             color=0x0EA5E9,
         )
@@ -349,7 +349,7 @@ class RoutePreferencesView(discord.ui.View):
     async def _generate(self, interaction: discord.Interaction) -> None:
         if not (self.aircraft.values and self.duration.values):
             await interaction.response.send_message(
-                "Pick an aircraft and a flight time first — those are required.",
+                "Pick an aircraft and a flight time first - those are required.",
                 ephemeral=True,
             )
             return

@@ -87,8 +87,8 @@ class CommunityCog(commands.Cog):
         for i, row in enumerate(rows):
             name = row["username"] or "pilot"
             prefix = medal[i] if i < 3 else f"#{i + 1}"
-            avg = f"{row['avg_rate']:.0f}" if row["avg_rate"] is not None else "—"
-            best = f"{row['best_rate']:.0f}" if row["best_rate"] is not None else "—"
+            avg = f"{row['avg_rate']:.0f}" if row["avg_rate"] is not None else "-"
+            best = f"{row['best_rate']:.0f}" if row["best_rate"] is not None else "-"
             embed.add_field(
                 name=f"{prefix} {name}",
                 value=(

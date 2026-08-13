@@ -6,7 +6,7 @@ Handles automated announcement dispatch for:
 - NOTAM alerts for saved airports
 - VATSIM event notifications
 
-Professional aviation operations style — no emojis, clean formatting.
+Professional aviation operations style - no emojis, clean formatting.
 """
 
 from __future__ import annotations
@@ -85,7 +85,7 @@ async def notify_user_airport_alert(
         user = await bot.fetch_user(user_id)
         if user:
             embed = discord.Embed(
-                title=f"NOTAM Alert — {icao}",
+                title=f"NOTAM Alert - {icao}",
                 description=notam_detail[:2000],
                 color=0xF59E0B,
             )

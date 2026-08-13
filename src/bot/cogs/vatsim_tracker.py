@@ -33,9 +33,34 @@ logger = logging.getLogger("ops_control.vatsim_tracker")
 
 DEFAULT_TRACKER_CHANNEL_ID = 1533447716359639131
 
-# A pilot is "airborne" when altitude > 0 and the feed does not flag on_ground.
-# VATSIM data feed exposes altitude (ft) and a flight plan per pilot.
-AIRBORNE_MIN_ALTITUDE_FT = 100
+# A pilot is "airborne" when the feed does not flag on_ground and the
+# altitude is a meaningful AGL climb. VATSIM exposes altitude in MSL ft, so
+# a raw absolute threshold false-positives at high-elevation fields (EDDS
+# ~1,276 ft: a ground aircraft during pushback reads 1,289 ft and passes a
+# 100 ft check whenever the client's on_ground flag is momentarily unset).
+#
+# Instead we self-calibrate: the last-seen on-ground altitude is the field
+# reference, and airborne requires climbing ~100 ft AGL above it. When no
+# ground reference exists yet (first sighting / never reported on_ground),
+# require a real climb signature: altitude well above any civil field plus
+# meaningful groundspeed.
+AIRBORNE_AGL_FT = 100
+AIRBORNE_UNKNOWN_FLOOR_FT = 1500
+AIRBORNE_MIN_GROUNDSPEED_KT = 60
+
+
+def _is_airborne(pilot: dict, prev: dict | None) -> bool:
+    """MSL-agnostic airborne check (see module constants for rationale)."""
+    altitude = int(pilot.get("altitude") or 0)
+    if bool(pilot.get("on_ground")):
+        return False
+    reference = None
+    if prev is not None:
+        reference = prev.get("ground_ref_alt") or prev.get("altitude")
+    if reference is not None and int(reference) > 0:
+        return (altitude - int(reference)) > AIRBORNE_AGL_FT
+    groundspeed = int(pilot.get("groundspeed") or 0)
+    return altitude > AIRBORNE_UNKNOWN_FLOOR_FT and groundspeed > AIRBORNE_MIN_GROUNDSPEED_KT
 
 
 def evaluate_tracker_state(
@@ -61,6 +86,8 @@ def evaluate_tracker_state(
             new_state = {
                 "callsign": prev_callsign,
                 "airborne": 0,
+                "altitude": (prev or {}).get("altitude") or 0,
+                "ground_ref_alt": (prev or {}).get("ground_ref_alt"),
                 "departure": (prev or {}).get("departure") or "N/A",
                 "arrival": (prev or {}).get("arrival") or "N/A",
                 "aircraft": (prev or {}).get("aircraft") or "N/A",
@@ -70,6 +97,8 @@ def evaluate_tracker_state(
         new_state = {
             "callsign": prev_callsign,
             "airborne": 0,
+            "altitude": (prev or {}).get("altitude") or 0,
+            "ground_ref_alt": (prev or {}).get("ground_ref_alt"),
             "departure": (prev or {}).get("departure") or "N/A",
             "arrival": (prev or {}).get("arrival") or "N/A",
             "aircraft": (prev or {}).get("aircraft") or "N/A",
@@ -77,12 +106,19 @@ def evaluate_tracker_state(
         }
         return "none", new_state
 
-    altitude = pilot.get("altitude") or 0
-    airborne = not bool(pilot.get("on_ground")) and altitude > AIRBORNE_MIN_ALTITUDE_FT
+    altitude = int(pilot.get("altitude") or 0)
+    airborne = _is_airborne(pilot, prev)
+    # Keep the last on-ground MSL altitude as the field reference so the AGL
+    # check works at ANY airport elevation (and survives a bot restart).
+    ground_ref_alt = (prev or {}).get("ground_ref_alt") if prev else None
+    if bool(pilot.get("on_ground")):
+        ground_ref_alt = altitude
 
     new_state = {
         "callsign": str(pilot.get("callsign") or "N/A"),
         "airborne": int(airborne),
+        "altitude": altitude,
+        "ground_ref_alt": ground_ref_alt,
         "departure": str(pilot.get("departure") or "N/A"),
         "arrival": str(pilot.get("arrival") or "N/A"),
         "aircraft": str(pilot.get("aircraft") or "N/A"),
@@ -234,7 +270,7 @@ class VatsimTracker(commands.Cog):
                 cid = str(row["vatsim_cid"])
                 pilot = pilots.get(cid)
                 cursor = await db.execute(
-                    "SELECT callsign, airborne, departure, arrival, aircraft FROM vatsim_tracking WHERE vatsim_cid = ?",
+                    "SELECT callsign, airborne, altitude, ground_ref_alt, departure, arrival, aircraft FROM vatsim_tracking WHERE vatsim_cid = ?",
                     (int(cid),),
                 )
                 prev_row = await cursor.fetchone()
@@ -245,11 +281,13 @@ class VatsimTracker(commands.Cog):
                 await db.execute(
                     """
                     INSERT INTO vatsim_tracking
-                        (vatsim_cid, callsign, airborne, departure, arrival, aircraft, last_seen)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                        (vatsim_cid, callsign, airborne, altitude, ground_ref_alt, departure, arrival, aircraft, last_seen)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(vatsim_cid)
                     DO UPDATE SET callsign = excluded.callsign,
                                   airborne = excluded.airborne,
+                                  altitude = excluded.altitude,
+                                  ground_ref_alt = excluded.ground_ref_alt,
                                   departure = excluded.departure,
                                   arrival = excluded.arrival,
                                   aircraft = excluded.aircraft,
@@ -259,6 +297,8 @@ class VatsimTracker(commands.Cog):
                         int(cid),
                         new_state["callsign"],
                         new_state["airborne"],
+                        new_state.get("altitude") or 0,
+                        new_state.get("ground_ref_alt"),
                         new_state["departure"],
                         new_state["arrival"],
                         new_state["aircraft"],

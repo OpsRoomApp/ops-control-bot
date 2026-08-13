@@ -20,7 +20,7 @@ from bot.config import config
 
 logger = logging.getLogger("ops_control.services.notam_service")
 
-# FAA NOTAM API (NASR — National Airspace System Resource)
+# FAA NOTAM API (NASR - National Airspace System Resource)
 FAA_NOTAM_URL = "https://soa.smext.faa.gov/apra/notam"
 
 # NMS proxy auth: prefer the dedicated NMS token, fall back to admin token.
@@ -251,7 +251,7 @@ async def fetch_notams(icao: str) -> list[dict[str, Any]]:
             logger.exception("FAA NOTAM API failed for %s", icao)
 
     # Fallback: VATSIM NOTAM data (the existing notams table is for internal OPS notices,
-    # not external aviation NOTAMs — we skip fallback for now since the spec
+    # not external aviation NOTAMs - we skip fallback for now since the spec
     # says to use official FAA NOTAM API where possible)
     logger.info("No NOTAM data source available for %s", icao)
     return results

@@ -125,7 +125,7 @@ def _pilot_summary(pilot: dict[str, Any]) -> dict[str, Any]:
 async def fetch_vatsim_atis(icao: str) -> dict[str, Any] | None:
     """Fetch ATIS for an airport from VATSIM.
 
-    The v3 data feed ATIS records do not carry an ``airport`` field — the
+    The v3 data feed ATIS records do not carry an ``airport`` field - the
     ICAO is the prefix of the callsign (e.g. ``KJFK_D_ATIS``) and the text
     lives as a list under ``text_atis`` (v2 used the ``atis_message``
     string). We match on the explicit ``airport`` key when present and on
@@ -359,7 +359,7 @@ def parse_simbrief_payload(data: dict[str, Any]) -> dict[str, Any] | None:
 async def fetch_simbrief_flightplan(username: str | None = None, static_id: str | None = None) -> dict[str, Any] | None:
     """Fetch a SimBrief flight plan via the public XML fetcher API.
 
-    No API key is required — the public XML fetcher endpoint works with the
+    No API key is required - the public XML fetcher endpoint works with the
     SimBrief pilot ID (digits) or username plus an optional static_id.
 
     Args:
@@ -390,7 +390,7 @@ async def fetch_simbrief_flightplan(username: str | None = None, static_id: str 
 
 
 # ---------------------------------------------------------------------------
-# Aviation Weather API (aviationweather.gov — free, no key required)
+# Aviation Weather API (aviationweather.gov - free, no key required)
 # ---------------------------------------------------------------------------
 
 METAR_API_URL = "https://aviationweather.gov/api/data/metar"

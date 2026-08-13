@@ -37,7 +37,7 @@ server source at github.com/blt950/where2fly):
 Attribution:
     Where2Fly requires "Powered by Where2Fly" with a hyperlink to
     https://where2fly.today near any data provided to users. Airline /
-    route data cannot be further distributed — we therefore never present
+    route data cannot be further distributed - we therefore never present
     an operator as a confirmed real-world service; operators are always
     labelled "Suggested Operator / Suggested Callsign".
 
@@ -67,7 +67,7 @@ from bot.services.routes.models import (
 
 logger = logging.getLogger("ops_control.routes.where2fly")
 
-# Default destinations filter — no geographic restriction.
+# Default destinations filter - no geographic restriction.
 _NO_FILTER: dict[str, Any] = {
     "continents": None,
     "countries": None,

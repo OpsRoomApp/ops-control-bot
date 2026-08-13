@@ -75,6 +75,39 @@ class TrackerStateTests(unittest.TestCase):
         self.assertEqual(event, "takeoff")
         self.assertEqual(state["airborne"], 1)
 
+    def test_high_field_ground_no_false_takeoff(self):
+        # Regression: EWG39KK at EDDS (~1,276 ft field). On_ground flag unset
+        # during pushback, MSL altitude 1,289 ft, groundspeed ~5 kt.
+        pilot = _pilot(altitude=1289, airborne=False, callsign="EWG39KK")
+        pilot["on_ground"] = False  # flag momentarily unset at pushback
+        pilot["groundspeed"] = 5
+        event, state = evaluate_tracker_state(None, pilot, "2026-08-13T14:21:00Z")
+        self.assertEqual(event, "none")
+        self.assertEqual(state["airborne"], 0)
+
+    def test_high_field_takeoff_with_ground_reference(self):
+        # After the tracker saw the aircraft on the ground at EDDS, a real
+        # climb above the stored field reference must still fire takeoff.
+        prev = {
+            "airborne": 0,
+            "callsign": "EWG39KK",
+            "altitude": 1289,
+            "ground_ref_alt": 1289,
+            "departure": "EDDS",
+            "arrival": "LDZA",
+            "aircraft": "A320",
+        }
+        event, state = evaluate_tracker_state(prev, _pilot(altitude=2000, callsign="EWG39KK"), "2026-08-13T14:25:00Z")
+        self.assertEqual(event, "takeoff")
+        self.assertEqual(state["airborne"], 1)
+
+    def test_on_ground_captures_field_reference(self):
+        pilot = _pilot(altitude=1289, airborne=False, callsign="EWG39KK")
+        event, state = evaluate_tracker_state(None, pilot, "2026-08-13T14:00:00Z")
+        self.assertEqual(event, "none")
+        self.assertEqual(state["ground_ref_alt"], 1289)
+        self.assertEqual(state["airborne"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

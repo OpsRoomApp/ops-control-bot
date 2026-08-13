@@ -1,1 +1,1 @@
-"""OPS CONTROL — Cogs package."""
+"""OPS CONTROL - Cogs package."""

@@ -14,7 +14,7 @@ Improvements over the legacy randomizer:
     * Uses Haversine great-circle distance.
     * Estimates target distance from cruise speed, climb/descent allowance,
       block/taxi allowance and a routing factor.
-    * Matches the requested flight time within a strict tolerance —
+    * Matches the requested flight time within a strict tolerance -
       an 8h request never yields a 30-minute route.
     * Validates approximate aircraft range.
     * Prefers Active=Y airlines and operators whose country/region is near

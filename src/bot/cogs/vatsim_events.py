@@ -17,14 +17,14 @@ Avoids duplicate posts by tracking posted/reminded in vatsim_events table.
 
 Reminder timing (fixed in v0.25.60):
   With the legacy 15-minute poll, the reminder only fired on the first poll
-  *inside* the window — which could be up to 15 minutes late (observed at
+  *inside* the window - which could be up to 15 minutes late (observed at
   19 minutes before start instead of 30). Reminders are now delivered by an
   exact-time asyncio task scheduled when the event is announced, so they fire
   at precisely `start_time - reminder_minutes`. The poll check remains as a
   restart safety net (fires late only if the task was lost).
 
 Footer timestamps:
-  Discord embed footers do NOT render `<t:...>` timestamps — the same markup
+  Discord embed footers do NOT render `<t:...>` timestamps - the same markup
   in the description/fields does. The footer therefore stays plain text; the
   description carries the rendered local-time timestamps.
 """
@@ -180,7 +180,7 @@ class VatsimEvents(commands.Cog):
             start_time - timedelta(minutes=reminder_minutes) - datetime.now(timezone.utc)
         ).total_seconds()
         if delay <= 0:
-            return  # ideal point already passed — the poll safety net covers it
+            return  # ideal point already passed - the poll safety net covers it
         task = asyncio.create_task(
             self._deliver_reminder_later(
                 event, title, start_time, end_time, channel, delay
@@ -202,7 +202,7 @@ class VatsimEvents(commands.Cog):
         try:
             await asyncio.sleep(delay)
             if datetime.now(timezone.utc) >= start_time:
-                return  # event already started — no reminder
+                return  # event already started - no reminder
             db = await get_db()
             cursor = await db.execute(
                 "SELECT reminded FROM vatsim_events WHERE event_id=?", (event_id,)

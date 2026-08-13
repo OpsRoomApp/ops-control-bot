@@ -1,1 +1,1 @@
-"""OPS CONTROL — Bot package."""
+"""OPS CONTROL - Bot package."""

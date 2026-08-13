@@ -1,1 +1,1 @@
-"""OPS CONTROL — Views package (Discord UI components)."""
+"""OPS CONTROL - Views package (Discord UI components)."""

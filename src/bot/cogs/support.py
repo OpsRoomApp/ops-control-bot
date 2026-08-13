@@ -33,7 +33,7 @@ CATEGORIES = [
 
 
 class SupportCog(commands.Cog):
-    """DEPRECATED: Support ticket system — use ticket_system.py instead."""
+    """DEPRECATED: Support ticket system - use ticket_system.py instead."""
 
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
@@ -72,5 +72,5 @@ class SupportCog(commands.Cog):
 
 
 async def setup(bot: commands.Bot) -> None:
-    logger.warning("SupportCog is deprecated — not loaded. Use ticket_system.py instead.")
+    logger.warning("SupportCog is deprecated - not loaded. Use ticket_system.py instead.")
     await bot.add_cog(SupportCog(bot))
