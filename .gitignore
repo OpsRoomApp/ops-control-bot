@@ -29,3 +29,6 @@ Thumbs.db
 # Test cache
 .pytest_cache/
 .coverage
+
+# Freebuff local agent database (never commit)
+.freebuff/
