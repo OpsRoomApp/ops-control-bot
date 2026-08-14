@@ -9,15 +9,66 @@ OPS CONTROL - Releases Cog
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
 from bot.config import config
-from bot.api import fetch_github_latest_release, fetch_opsroom_releases_manifest
+from bot.api import (
+    _get_session,
+    fetch_github_latest_release,
+    fetch_opsroom_public_releases,
+    fetch_opsroom_releases_manifest,
+)
 
 logger = logging.getLogger("ops_control.cogs.releases")
+
+
+def format_notes_for_discord(markdown: str, limit: int = 900) -> str:
+    """Convert release-note markdown into a Discord-friendly embed body.
+
+    Contract shared with admin-api (discord_webhooks.py) and the admin panel
+    preview (ReleaseNotesEditor.jsx). Keep in sync by spec:
+      - "# / ## / ###" headings become bold lines
+      - "- " bullets stay bullets (Discord renders them natively)
+      - blank lines collapse; everything else is kept as plain text
+      - the result is truncated to ``limit`` chars with an ellipsis
+    """
+    lines: list[str] = []
+    for raw in (markdown or "").splitlines():
+        stripped = raw.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("### "):
+            lines.append(f"**{stripped[4:].strip()}**")
+        elif stripped.startswith("## "):
+            lines.append(f"**{stripped[3:].strip()}**")
+        elif stripped.startswith("# "):
+            lines.append(f"**{stripped[2:].strip()}**")
+        elif stripped.startswith("> "):
+            lines.append(stripped[2:].strip())
+        else:
+            lines.append(stripped)
+    text = "\n".join(lines)
+    if len(text) > limit:
+        text = text[:limit].rstrip() + "\u2026"
+    return text
+
+
+def _version_key(version: str) -> tuple[int, ...]:
+    """Parse '0.25.0' / 'v0.25.0' / '0.9' into a comparable numeric tuple.
+
+    Always 3 components so '0.9' == (0, 9, 0) compares correctly against
+    '0.9.1' == (0, 9, 1).
+    """
+    parts: list[int] = []
+    for chunk in (version or "").lstrip("v").split("."):
+        digits = "".join(ch for ch in chunk if ch.isdigit())
+        parts.append(int(digits) if digits else 0)
+    parts += [0] * (3 - len(parts))
+    return tuple(parts[:3])
 
 ROADMAP_DATA = {
     "current_sprint": "v0.25 Public Beta",
@@ -96,6 +147,69 @@ class ReleasesCog(commands.Cog):
 
 
 
+    async def _fetch_releases(self) -> list[dict[str, Any]]:
+        """Release history, website-primary with GitHub fallback.
+
+        Order of preference:
+          1. opsroom.live/api/public/releases (admin-panel catalog, markdown
+             notes, published + archived entries)
+          2. GitHub Releases API (same notes when the GitHub body is kept in
+             sync via the admin panel's "Copy for GitHub")
+          3. opsroom.live/api/update.json manifest (current release only)
+        """
+        try:
+            data = await fetch_opsroom_public_releases()
+            entries = (data or {}).get("releases") or []
+            out = [
+                {
+                    "version": str(e.get("version") or ""),
+                    "date": str(e.get("published_at") or "")[:10],
+                    "notes": str(e.get("notes") or ""),
+                }
+                for e in entries
+                if e.get("version")
+            ]
+            if out:
+                return out
+        except Exception as e:
+            logger.debug("Public releases API failed: %s", e)
+
+        try:
+            session = await _get_session()
+            url = f"https://api.github.com/repos/{config.github_repo}/releases?per_page=10"
+            async with session.get(url) as resp:
+                resp.raise_for_status()
+                gh = await resp.json()
+            out = [
+                {
+                    "version": str(r.get("tag_name") or "").lstrip("v"),
+                    "date": str(r.get("published_at") or "")[:10],
+                    "notes": str(r.get("body") or ""),
+                }
+                for r in gh
+                if r.get("tag_name")
+            ]
+            if out:
+                return out
+        except Exception as e:
+            logger.debug("GitHub releases fallback failed: %s", e)
+
+        try:
+            manifest = await fetch_opsroom_releases_manifest()
+            version = str(manifest.get("latest_version") or manifest.get("version") or "")
+            if version:
+                return [
+                    {
+                        "version": version,
+                        "date": str(manifest.get("published_at") or "")[:10],
+                        "notes": str(manifest.get("notes") or manifest.get("message") or ""),
+                    }
+                ]
+        except Exception as e:
+            logger.debug("Manifest fallback failed: %s", e)
+
+        return []
+
     @app_commands.command(
         name="latest",
         description="Display the latest OPS ROOM release information.",
@@ -104,61 +218,31 @@ class ReleasesCog(commands.Cog):
         """Fetch and display the latest OPS ROOM release."""
         await interaction.response.defer()
 
-        release = None
-        manifest = None
-
-        try:
-            release = await fetch_github_latest_release(config.github_repo)
-        except Exception as e:
-            logger.debug("GitHub release fetch failed: %s", e)
-
-        if release is None:
-            try:
-                manifest = await fetch_opsroom_releases_manifest()
-            except Exception as e:
-                logger.debug("Manifest fetch failed: %s", e)
-
-        if release is None and manifest is None:
+        releases = await self._fetch_releases()
+        if not releases:
             await interaction.followup.send(
                 "Release information unavailable. Visit opsroom.live for the latest version.",
                 ephemeral=True,
             )
             return
 
-        if release:
-            tag = release.get("tag_name", "Unknown").lstrip("v")
-            body = (release.get("body") or "")[:1500]
-            published = (release.get("published_at") or "")[:10]
+        rel = releases[0]
+        version = rel.get("version", "Unknown")
+        body = format_notes_for_discord(rel.get("notes") or "", limit=1500)
 
-            embed = discord.Embed(
-                title=f"OPS ROOM {tag}",
-                description=body if body else "No release notes available.",
-                color=0x2563EB,
-                url="https://opsroom.live/downloads",
-            )
-            embed.add_field(name="Version", value=tag, inline=True)
-            embed.add_field(name="Release Date", value=published, inline=True)
-            embed.add_field(
-                name="Download",
-                value="[opsroom.live/downloads](https://opsroom.live/downloads)",
-                inline=True,
-            )
-        elif manifest:
-            version = manifest.get("latest_version") or manifest.get("version", "Unknown")
-            embed = discord.Embed(
-                title=f"OPS ROOM {version}",
-                description=manifest.get("notes", manifest.get("message", "")),
-                color=0x2563EB,
-                url="https://opsroom.live/downloads",
-            )
-            embed.add_field(name="Version", value=version, inline=True)
-            embed.add_field(name="Codename", value=manifest.get("codename", "N/A"), inline=True)
-            embed.add_field(name="Channel", value=manifest.get("channel", "stable"), inline=True)
-            embed.add_field(
-                name="Download",
-                value="[opsroom.live/downloads](https://opsroom.live/downloads)",
-                inline=True,
-            )
+        embed = discord.Embed(
+            title=f"OPS ROOM {version}",
+            description=body if body else "No release notes available.",
+            color=0x2563EB,
+            url="https://opsroom.live/downloads",
+        )
+        embed.add_field(name="Version", value=version, inline=True)
+        embed.add_field(name="Release Date", value=rel.get("date") or "N/A", inline=True)
+        embed.add_field(
+            name="Download",
+            value="[opsroom.live/downloads](https://opsroom.live/downloads)",
+            inline=True,
+        )
 
         embed.set_footer(text="OPS ROOM Release System")
         await interaction.followup.send(embed=embed)
@@ -168,37 +252,17 @@ class ReleasesCog(commands.Cog):
         description="Recent OPS ROOM version history.",
     )
     async def changelog(self, interaction: discord.Interaction) -> None:
-        """Display recent version history from GitHub releases."""
+        """Display recent version history (website primary, GitHub fallback)."""
         await interaction.response.defer()
 
-        import aiohttp
-        from bot.api import _get_session
+        releases = await self._fetch_releases()
+        min_key = _version_key(config.changelog_min_version)
+        releases = [
+            r for r in releases
+            if r.get("version") and _version_key(r["version"]) >= min_key
+        ]
 
-        releases_list = []
-        try:
-            session = await _get_session()
-            url = f"https://api.github.com/repos/{config.github_repo}/releases?per_page=5"
-            async with session.get(url) as resp:
-                resp.raise_for_status()
-                releases_list = await resp.json()
-        except Exception:
-            pass
-
-        if not releases_list:
-            # Fallback to manifest
-            try:
-                manifest = await fetch_opsroom_releases_manifest()
-                if manifest:
-                    version = manifest.get("latest_version") or manifest.get("version", "Unknown")
-                    releases_list = [{
-                        "tag_name": f"v{version}",
-                        "published_at": manifest.get("published_at", ""),
-                        "body": manifest.get("notes", manifest.get("message", "")),
-                    }]
-            except Exception:
-                pass
-
-        if not releases_list:
+        if not releases:
             await interaction.followup.send(
                 "Changelog unavailable. Visit opsroom.live/changelog for details.",
                 ephemeral=True,
@@ -210,13 +274,13 @@ class ReleasesCog(commands.Cog):
             color=0x2563EB,
         )
 
-        for rel in releases_list[:5]:
-            tag = rel.get("tag_name", "Unknown")
-            date = (rel.get("published_at") or "")[:10]
-            body = (rel.get("body") or "No notes.")
-            summary = body[:300] + ("..." if len(body) > 300 else "")
+        for rel in releases[:5]:
+            tag = rel.get("version", "Unknown")
+            date = rel.get("date") or ""
+            summary = format_notes_for_discord(rel.get("notes") or "No notes.", limit=900)
+            name = f"v{tag} -- {date}" if date else f"v{tag}"
             embed.add_field(
-                name=f"{tag} -- {date}",
+                name=name,
                 value=summary,
                 inline=False,
             )

@@ -96,6 +96,20 @@ class Config:
             "OPSROOM_RELEASES_API", "https://opsroom.live/api/update.json"
         )
     )
+    # Website-primary release history (admin-panel catalog, markdown notes).
+    # /latest and /changelog read this first, with GitHub + the manifest as
+    # fallbacks, so release notes come from the same source as the website.
+    opsroom_public_releases_api: str = field(
+        default_factory=lambda: _env_str(
+            "OPSROOM_PUBLIC_RELEASES_API",
+            "https://opsroom.live/api/public/releases",
+        )
+    )
+    # /changelog hides anything older than this ("reset" the history from a
+    # chosen version onward). Empty string = no filter.
+    changelog_min_version: str = field(
+        default_factory=lambda: _env_str("CHANGELOG_MIN_VERSION", "0.25.0")
+    )
 
     # -- Channel IDs --
     bug_forum_channel_id: int = field(

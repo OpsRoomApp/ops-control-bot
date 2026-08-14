@@ -470,3 +470,21 @@ async def fetch_opsroom_releases_manifest() -> dict[str, Any] | None:
     except Exception:
         logger.exception("OPS ROOM releases API request failed")
         raise
+
+
+async def fetch_opsroom_public_releases() -> dict[str, Any] | None:
+    """Fetch the public release history from opsroom.live (website-primary).
+
+    Returns the raw JSON body: ``{"releases": [{version, codename, channel,
+    state, published_at, notes, filename, installer_filename}, ...]}``.
+    """
+    from bot.config import config
+
+    try:
+        session = await _get_session()
+        async with session.get(config.opsroom_public_releases_api) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+    except Exception:
+        logger.exception("OPS ROOM public releases API request failed")
+        raise
