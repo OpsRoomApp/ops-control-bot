@@ -145,7 +145,9 @@ async def _descent_briefing_dm(bot: commands.Bot, payload: dict[str, Any]) -> No
     """#104: DM the user a compact destination briefing at top-of-descent.
 
     Best-effort: any missing data (NOAA down, no NOTAMs) degrades to whatever
-    is available; nothing here can ever crash the dispatcher.
+    is available; nothing here can ever crash the dispatcher. METAR, TAF and
+    NOTAMs are fetched independently so one failing source never blanks the
+    others.
     """
     discord_id = int(payload.get("discord_id") or 0)
     destination = str(payload.get("destination") or "").strip().upper()
@@ -161,12 +163,17 @@ async def _descent_briefing_dm(bot: commands.Bot, payload: dict[str, Any]) -> No
 
     metar = taf = notams = None
     try:
-        from bot.services.noaa_weather import fetch_noaa_metar, fetch_noaa_taf
+        from bot.services.noaa_weather import fetch_noaa_metar
 
         metar = await fetch_noaa_metar(destination)
+    except Exception:
+        logger.exception("Descent briefing METAR fetch failed for %s", destination)
+    try:
+        from bot.services.noaa_weather import fetch_noaa_taf
+
         taf = await fetch_noaa_taf(destination)
     except Exception:
-        logger.exception("Descent briefing weather fetch failed for %s", destination)
+        logger.exception("Descent briefing TAF fetch failed for %s", destination)
     try:
         from bot.services.notam_service import fetch_notams
 
@@ -187,12 +194,20 @@ async def _descent_briefing_dm(bot: commands.Bot, payload: dict[str, Any]) -> No
     else:
         lines.append(f"**TAF {destination}** - unavailable")
     if notams:
-        active = [n for n in notams if str(n.get("type") or "").upper() in ("ACT", "ACTIVE", "RUNWAY CLOSED", "AIRPORT") or n.get("text")]
+        # All sources (NOTAM DB / NMS proxy / FAA API) already return active
+        # NOTAMs only, so keep any row that carries actual text. The row
+        # normalizers store the body under "description" (never "text"), so
+        # the old type-whitelist + "text" filter silently dropped everything.
+        active = [
+            n for n in notams
+            if (str(n.get("description") or n.get("text") or "").strip()
+                not in ("", "No NOTAM text returned."))
+        ]
         active = active[:8]
         if active:
             notam_lines = []
             for n in active:
-                text = str(n.get("text") or n.get("notam") or "").strip()
+                text = str(n.get("description") or n.get("text") or n.get("notam") or "").strip()
                 notam_lines.append(f"• {text[:160]}" if text else "• (no text)")
             lines.append(f"**NOTAMs {destination}** ({len(active)})\n" + "\n".join(notam_lines))
         else:
