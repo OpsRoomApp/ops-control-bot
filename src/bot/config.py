@@ -110,6 +110,19 @@ class Config:
     changelog_min_version: str = field(
         default_factory=lambda: _env_str("CHANGELOG_MIN_VERSION", "0.25.0")
     )
+    # Channels the bot posts release announcements to, as itself (no webhooks
+    # involved, so posts carry the bot's name and avatar).
+    # 1522225470089855146 = #release-notes, 1522225534514499724 = #downloads.
+    discord_release_channel_id: int = field(
+        default_factory=lambda: _env_int("DISCORD_RELEASE_CHANNEL_ID", 1522225470089855146)
+    )
+    discord_downloads_channel_id: int = field(
+        default_factory=lambda: _env_int("DISCORD_DOWNLOADS_CHANNEL_ID", 1522225534514499724)
+    )
+    # How often the bot polls the public releases endpoint for new releases.
+    release_poll_seconds: int = field(
+        default_factory=lambda: _env_int("RELEASE_POLL_SECONDS", 30)
+    )
 
     # -- Channel IDs --
     bug_forum_channel_id: int = field(

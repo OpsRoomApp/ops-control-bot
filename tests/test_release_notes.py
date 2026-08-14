@@ -25,7 +25,7 @@ for k, v in {
 }.items():
     os.environ.setdefault(k, v)
 
-from bot.cogs.releases import _version_key, format_notes_for_discord
+from bot.cogs.releases import _version_key, format_notes_for_discord, should_announce
 
 
 class FormatNotesForDiscordTests(unittest.TestCase):
@@ -58,6 +58,23 @@ class FormatNotesForDiscordTests(unittest.TestCase):
 
     def test_blockquote_is_kept_as_text(self):
         self.assertEqual(format_notes_for_discord("> note"), "note")
+
+
+class ShouldAnnounceTests(unittest.TestCase):
+    def test_newer_version_announces(self):
+        self.assertTrue(should_announce("0.25.0", "0.25.1"))
+        self.assertTrue(should_announce("0.24.9", "0.25.0"))
+
+    def test_same_or_older_skips(self):
+        self.assertFalse(should_announce("0.25.0", "0.25.0"))
+        self.assertFalse(should_announce("0.25.1", "0.25.0"))
+
+    def test_first_run_baselines_without_announcing(self):
+        self.assertFalse(should_announce("", "0.25.0"))
+
+    def test_v_prefix_ignored(self):
+        self.assertTrue(should_announce("0.25.0", "v0.25.1"))
+        self.assertFalse(should_announce("0.25.0", "v0.25.0"))
 
 
 class VersionKeyTests(unittest.TestCase):

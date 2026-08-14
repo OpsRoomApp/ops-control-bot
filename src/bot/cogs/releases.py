@@ -9,6 +9,7 @@ OPS CONTROL - Releases Cog
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 import discord
@@ -16,12 +17,8 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from bot.config import config
-from bot.api import (
-    _get_session,
-    fetch_github_latest_release,
-    fetch_opsroom_public_releases,
-    fetch_opsroom_releases_manifest,
-)
+from bot.api import _get_session, fetch_opsroom_public_releases, fetch_opsroom_releases_manifest
+from bot.database.db import get_db
 
 logger = logging.getLogger("ops_control.cogs.releases")
 
@@ -29,8 +26,8 @@ logger = logging.getLogger("ops_control.cogs.releases")
 def format_notes_for_discord(markdown: str, limit: int = 900) -> str:
     """Convert release-note markdown into a Discord-friendly embed body.
 
-    Contract shared with admin-api (discord_webhooks.py) and the admin panel
-    preview (ReleaseNotesEditor.jsx). Keep in sync by spec:
+    Contract shared with the admin panel preview (ReleaseNotesEditor.jsx).
+    Keep in sync by spec:
       - "# / ## / ###" headings become bold lines
       - "- " bullets stay bullets (Discord renders them natively)
       - blank lines collapse; everything else is kept as plain text
@@ -70,6 +67,18 @@ def _version_key(version: str) -> tuple[int, ...]:
     parts += [0] * (3 - len(parts))
     return tuple(parts[:3])
 
+
+def should_announce(last_announced: str, current_version: str) -> bool:
+    """True when ``current_version`` is newer than the last announced one.
+
+    An empty ``last_announced`` is a first-run sentinel: the caller should
+    baseline without announcing, so this returns False. Uses the same version
+    ordering as the /changelog min-version filter.
+    """
+    if not last_announced:
+        return False
+    return _version_key(current_version) > _version_key(last_announced)
+
 ROADMAP_DATA = {
     "current_sprint": "v0.25 Public Beta",
     "completed": [
@@ -103,49 +112,145 @@ class ReleasesCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
-    # v0.25.55 (B5) - Changelog auto-announce background task
-    _last_announced_tag: str | None = None
-
     async def cog_load(self):
-        if config.discord_announcement_channel:
+        if config.discord_release_channel_id or config.discord_downloads_channel_id:
+            self._release_poller.change_interval(seconds=config.release_poll_seconds)
             self._release_poller.start()
 
     async def cog_unload(self):
         if hasattr(self, "_release_poller") and self._release_poller.is_running():
             self._release_poller.cancel()
 
-    @tasks.loop(minutes=30)
-    async def _release_poller(self):
-        """Poll GitHub for new releases and auto-announce to the configured channel."""
+    # ------------------------------------------------------------------
+    # Release announcements (bot identity, no webhooks)
+    #
+    # Polls the public releases endpoint (the same website-primary source
+    # /latest and /changelog read). When a new version appears it posts to
+    # #release-notes and #downloads as the bot itself, so the posts carry
+    # the bot's name and avatar. The last announced version is persisted in
+    # guild_settings so a restart never re-announces the same release.
+    # ------------------------------------------------------------------
+
+    LAST_ANNOUNCED_KEY = "last_announced_release_version"
+
+    async def _get_last_announced(self) -> str:
+        db = await get_db()
         try:
-            release = await fetch_github_latest_release(config.github_repo)
+            cur = await db.execute(
+                "SELECT value FROM guild_settings WHERE guild_id = ? AND key = ?",
+                (config.guild_id, self.LAST_ANNOUNCED_KEY),
+            )
+            row = await cur.fetchone()
+            return str(row["value"]) if row else ""
         except Exception:
+            logger.exception("Failed to read last announced release version")
+            return ""
+
+    async def _set_last_announced(self, version: str) -> None:
+        db = await get_db()
+        try:
+            await db.execute(
+                """
+                INSERT INTO guild_settings (guild_id, key, value, updated_by, updated_at)
+                VALUES (?, ?, ?, NULL, ?)
+                ON CONFLICT(guild_id, key)
+                DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+                """,
+                (
+                    config.guild_id,
+                    self.LAST_ANNOUNCED_KEY,
+                    version,
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+            await db.commit()
+        except Exception:
+            logger.exception("Failed to persist last announced release version")
+
+    @tasks.loop(seconds=30)
+    async def _release_poller(self):
+        """Announce newly published releases to #release-notes and #downloads."""
+        try:
+            data = await fetch_opsroom_public_releases()
+            entries = (data or {}).get("releases") or []
+        except Exception as e:
+            logger.debug("Public releases poll failed: %s", e)
             return
-        if not release:
+        if not entries:
             return
-        tag = str(release.get("tag_name") or "")
-        if not tag or tag == self._last_announced_tag:
+
+        newest = entries[0]
+        version = str(newest.get("version") or "")
+        if not version:
             return
-        self._last_announced_tag = tag
-        version = tag.lstrip("v")
-        body = (release.get("body") or "")[:1500]
-        channel = self.bot.get_channel(config.discord_announcement_channel)
-        if not channel or not isinstance(channel, discord.TextChannel):
+
+        last = await self._get_last_announced()
+        if not last:
+            # First run: baseline without announcing so the bot only posts
+            # releases published after it starts.
+            await self._set_last_announced(version)
             return
+        if not should_announce(last, version):
+            return
+
+        await self._announce_release(newest)
+        await self._set_last_announced(version)
+
+    async def _announce_release(self, release: dict[str, Any]) -> None:
+        """Post the release note and download links as the bot itself."""
+        version = str(release.get("version") or "?")
+        notes = format_notes_for_discord(str(release.get("notes") or ""), limit=1000)
+        downloads = "https://opsroom.live/downloads"
+
         embed = discord.Embed(
-            title=f"OPS ROOM {version} Released",
-            description=body if body else "No release notes available.",
+            title=f"OPS ROOM v{version} Released",
+            description=notes or "A new OPS ROOM release is available.",
             color=0x2563EB,
-            url=f"https://github.com/{config.github_repo}/releases/tag/{tag}",
+            url=downloads,
         )
         embed.add_field(name="Version", value=version, inline=True)
-        embed.add_field(name="Download", value="[opsroom.live/downloads](https://opsroom.live/downloads)", inline=True)
-        try:
-            await channel.send(embed=embed)
-        except discord.Forbidden:
-            pass
+        embed.add_field(name="Download", value=f"[opsroom.live/downloads]({downloads})", inline=True)
 
+        if config.discord_release_channel_id:
+            channel = self.bot.get_channel(config.discord_release_channel_id)
+            if isinstance(channel, discord.TextChannel):
+                try:
+                    await channel.send(embed=embed)
+                except discord.Forbidden:
+                    logger.warning(
+                        "No permission to post in release channel %s", config.discord_release_channel_id
+                    )
+                except Exception:
+                    logger.exception("Failed to post release announcement")
 
+        if config.discord_downloads_channel_id:
+            channel = self.bot.get_channel(config.discord_downloads_channel_id)
+            if not isinstance(channel, discord.TextChannel):
+                return
+            dl_embed = discord.Embed(
+                title=f"OPS ROOM v{version} - Downloads",
+                color=0x2563EB,
+                url=downloads,
+            )
+            installer = str(release.get("installer_filename") or "")
+            if installer:
+                dl_embed.add_field(name="Installer", value=f"[{installer}]({downloads}/{installer})", inline=False)
+            zip_name = str(release.get("filename") or "")
+            if zip_name:
+                dl_embed.add_field(name="ZIP archive", value=f"[Download ZIP]({downloads}/{zip_name})", inline=False)
+            dl_embed.add_field(
+                name="Downloads page",
+                value=f"[opsroom.live/downloads]({downloads})",
+                inline=False,
+            )
+            try:
+                await channel.send(embed=dl_embed)
+            except discord.Forbidden:
+                logger.warning(
+                    "No permission to post in downloads channel %s", config.discord_downloads_channel_id
+                )
+            except Exception:
+                logger.exception("Failed to post download links")
 
     async def _fetch_releases(self) -> list[dict[str, Any]]:
         """Release history, website-primary with GitHub fallback.
