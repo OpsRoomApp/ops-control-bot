@@ -8,6 +8,7 @@ OPS CONTROL - Releases Cog
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -218,27 +219,30 @@ class ReleasesCog(commands.Cog):
         notes = format_notes_for_discord(str(release.get("notes") or ""), limit=100000)
         downloads = "https://opsroom.live/downloads"
 
-        chunks = _split_notes(notes, 4000)
-        embeds: list[discord.Embed] = []
-        for index, chunk in enumerate(chunks):
-            if index == 0:
-                embed = discord.Embed(
-                    title=f"OPS ROOM v{version} Released",
-                    description=chunk or "A new OPS ROOM release is available.",
-                    color=0x2563EB,
-                    url=downloads,
-                )
-                embed.add_field(name="Version", value=version, inline=True)
-                embed.add_field(name="Download", value=f"[opsroom.live/downloads]({downloads})", inline=True)
-            else:
-                embed = discord.Embed(description=chunk, color=0x2563EB)
-            embeds.append(embed)
-
+        chunks = _split_notes(notes, 3800)
         if config.discord_release_channel_id:
             channel = self.bot.get_channel(config.discord_release_channel_id)
             if isinstance(channel, discord.TextChannel):
                 try:
-                    await channel.send(embeds=embeds)
+                    for index, chunk in enumerate(chunks):
+                        if index == 0:
+                            embed = discord.Embed(
+                                title=f"OPS ROOM v{version} Released",
+                                description=chunk or "A new OPS ROOM release is available.",
+                                color=0x2563EB,
+                                url=downloads,
+                            )
+                            embed.add_field(name="Version", value=version, inline=True)
+                            embed.add_field(name="Download", value=f"[opsroom.live/downloads]({downloads})", inline=True)
+                        else:
+                            embed = discord.Embed(description=chunk, color=0x2563EB)
+                        # One embed per message: Discord caps the combined character
+                        # count across all embeds in a single message, so one
+                        # send(embeds=[...]) with several large embeds trips the
+                        # 6000-char limit. Send them as separate messages instead.
+                        await channel.send(embed=embed)
+                        if index < len(chunks) - 1:
+                            await asyncio.sleep(0.75)
                 except discord.Forbidden:
                     logger.warning(
                         "No permission to post in release channel %s", config.discord_release_channel_id
