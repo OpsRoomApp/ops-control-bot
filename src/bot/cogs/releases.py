@@ -54,6 +54,22 @@ def format_notes_for_discord(markdown: str, limit: int = 900) -> str:
     return text
 
 
+def _split_notes(text: str, size: int = 4000) -> list[str]:
+    """Split long notes into Discord-safe chunks, breaking on line boundaries."""
+    chunks: list[str] = []
+    current = ""
+    for line in (text or "").splitlines():
+        candidate = current + chr(10) + line if current else line
+        if len(candidate) > size and current:
+            chunks.append(current)
+            current = line
+        else:
+            current = candidate
+    if current:
+        chunks.append(current)
+    return chunks or [""]
+
+
 def _version_key(version: str) -> tuple[int, ...]:
     """Parse '0.25.0' / 'v0.25.0' / '0.9' into a comparable numeric tuple.
 
@@ -199,23 +215,30 @@ class ReleasesCog(commands.Cog):
     async def _announce_release(self, release: dict[str, Any]) -> None:
         """Post the release note and download links as the bot itself."""
         version = str(release.get("version") or "?")
-        notes = format_notes_for_discord(str(release.get("notes") or ""), limit=1000)
+        notes = format_notes_for_discord(str(release.get("notes") or ""), limit=100000)
         downloads = "https://opsroom.live/downloads"
 
-        embed = discord.Embed(
-            title=f"OPS ROOM v{version} Released",
-            description=notes or "A new OPS ROOM release is available.",
-            color=0x2563EB,
-            url=downloads,
-        )
-        embed.add_field(name="Version", value=version, inline=True)
-        embed.add_field(name="Download", value=f"[opsroom.live/downloads]({downloads})", inline=True)
+        chunks = _split_notes(notes, 4000)
+        embeds: list[discord.Embed] = []
+        for index, chunk in enumerate(chunks):
+            if index == 0:
+                embed = discord.Embed(
+                    title=f"OPS ROOM v{version} Released",
+                    description=chunk or "A new OPS ROOM release is available.",
+                    color=0x2563EB,
+                    url=downloads,
+                )
+                embed.add_field(name="Version", value=version, inline=True)
+                embed.add_field(name="Download", value=f"[opsroom.live/downloads]({downloads})", inline=True)
+            else:
+                embed = discord.Embed(description=chunk, color=0x2563EB)
+            embeds.append(embed)
 
         if config.discord_release_channel_id:
             channel = self.bot.get_channel(config.discord_release_channel_id)
             if isinstance(channel, discord.TextChannel):
                 try:
-                    await channel.send(embed=embed)
+                    await channel.send(embeds=embeds)
                 except discord.Forbidden:
                     logger.warning(
                         "No permission to post in release channel %s", config.discord_release_channel_id
