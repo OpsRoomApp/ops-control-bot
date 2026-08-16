@@ -62,7 +62,7 @@ class CommunityCog(commands.Cog):
             FROM flight_logs
             WHERE landing_rate IS NOT NULL {since}
             GROUP BY user_id
-            ORDER BY flights DESC, hours DESC
+            ORDER BY hours DESC, flights DESC
             LIMIT 10
             """
         )
