@@ -180,8 +180,32 @@ async def _descent_briefing_dm(bot: commands.Bot, payload: dict[str, Any]) -> No
         notams = await fetch_notams(destination)
     except Exception:
         logger.debug("Descent briefing NOTAM fetch failed for %s", destination)
+    # #118: ATIS - VATSIM live first, ATIS.guru real-world D-ATIS as fallback.
+    atis = None
+    try:
+        from bot.api import fetch_vatsim_atis
+
+        atis = await fetch_vatsim_atis(destination)
+    except Exception:
+        logger.debug("Descent briefing VATSIM ATIS fetch failed for %s", destination)
+    if not atis or not atis.get("atis_message"):
+        try:
+            from bot.api.atisguru import fetch_atisguru_atis
+
+            atis = await fetch_atisguru_atis(destination)
+        except Exception:
+            logger.debug("Descent briefing ATIS.guru fetch failed for %s", destination)
 
     lines: list[str] = []
+    if atis and atis.get("atis_message"):
+        atis_type = str(atis.get("atis_type") or "ATIS")
+        atis_code = atis.get("atis_code")
+        atis_head = f"**{atis_type} {destination}**"
+        if atis_code:
+            atis_head += f" - {atis_code}"
+        lines.append(f"{atis_head}\n```{atis.get('atis_message')}```")
+    else:
+        lines.append(f"**ATIS {destination}** - unavailable")
     if metar and metar.get("raw_text"):
         lines.append(
             f"**METAR {destination}** {metar.get('flight_category') or ''}\n"
