@@ -115,7 +115,7 @@ class HelpCog(commands.Cog):
             ("/profile", "Your user profile"),
             ("/profile-set", "Update profile (simulator / network)"),
             ("/roles", "Pick your simulator and network roles"),
-            ("/leaderboard [period]", "Community flight leaderboard (hours, landings, landing rate)"),
+            ("/leaderboard [period] [sort]", "Community flight leaderboard (hours, flights, landing rate)"),
             ("/flight-visibility <discord|public|hidden>", "Choose where your flights appear"),
             ("/link-app", "Get a one-time pairing code for the desktop app"),
         ]

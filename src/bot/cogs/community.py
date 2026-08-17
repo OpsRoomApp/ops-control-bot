@@ -1,6 +1,6 @@
 """OPS CONTROL - Community Cog
 
-/leaderboard -- Community flight leaderboard (hours, landings, landing rate).
+/leaderboard -- Community flight leaderboard (sortable by hours, flights, landing rate).
 /link-app -- Generate a one-time pairing code for the OPS ROOM desktop app.
 /flight-visibility -- Choose where your flights appear (Discord / Public / Hidden).
 """
@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+from typing import Literal
 
 import discord
 from discord import app_commands
@@ -33,11 +34,15 @@ class CommunityCog(commands.Cog):
         name="leaderboard",
         description="Community flight leaderboard: hours, landings, and landing rate.",
     )
-    @app_commands.describe(period="Week, month, or all-time (default all-time)")
+    @app_commands.describe(
+        period="Week, month, or all-time (default all-time)",
+        sort="Sort by hours, flights, or landing rate (default hours)",
+    )
     async def leaderboard(
         self,
         interaction: discord.Interaction,
         period: str = "alltime",
+        sort: Literal["hours", "flights", "rate"] = "hours",
     ) -> None:
         """Show the community flight leaderboard."""
         period = period.strip().lower().replace("-", "").replace("_", "")
@@ -51,6 +56,16 @@ class CommunityCog(commands.Cog):
         elif period == "month":
             since = "AND submitted_at >= datetime('now', '-30 days')"
 
+        # Landing rates are always negative fpm and a soft touchdown is close
+        # to 0 (e.g. -220 fpm), so the rate sort mirrors the website: order by
+        # negated absolute value so the least negative landing tops the list
+        # and junk positive rates sink to the bottom.
+        order_by = {
+            "hours": "ORDER BY hours DESC, flights DESC",
+            "flights": "ORDER BY flights DESC, hours DESC",
+            "rate": "ORDER BY -ABS(avg_rate) DESC, hours DESC",
+        }[sort]
+
         db = await get_db()
         cursor = await db.execute(
             f"""
@@ -62,7 +77,7 @@ class CommunityCog(commands.Cog):
             FROM flight_logs
             WHERE landing_rate IS NOT NULL {since}
             GROUP BY user_id
-            ORDER BY hours DESC, flights DESC
+            {order_by}
             LIMIT 10
             """
         )
@@ -74,13 +89,21 @@ class CommunityCog(commands.Cog):
             )
             return
 
+        sort_labels = {
+            "hours": "sorted by hours",
+            "flights": "sorted by flights",
+            "rate": "sorted by landing rate (softest first)",
+        }
         embed = discord.Embed(
             title="🏆 OPS ROOM Flight Leaderboard",
-            description={
-                "week": "Last 7 days",
-                "month": "Last 30 days",
-                "alltime": "All time",
-            }.get(period, "All time"),
+            description=(
+                {
+                    "week": "Last 7 days",
+                    "month": "Last 30 days",
+                    "alltime": "All time",
+                }.get(period, "All time")
+                + f" · {sort_labels[sort]}"
+            ),
             color=0x2563EB,
         )
         medal = ["🥇", "🥈", "🥉"]
