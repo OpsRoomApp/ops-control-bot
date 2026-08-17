@@ -72,8 +72,11 @@ class CommunityCog(commands.Cog):
             SELECT username,
                    COUNT(*)                         AS flights,
                    COALESCE(SUM(duration_min), 0) / 60.0 AS hours,
-                   AVG(landing_rate)                AS avg_rate,
-                   MAX(landing_rate)                AS best_rate
+                   -- Mirrors the website: only strictly negative touchdown
+                   -- rates of at least 1 fpm count, so parked v/s junk
+                   -- (e.g. 0.0 or -0.008 fpm) can never be the "best".
+                   AVG(CASE WHEN landing_rate <= -1 THEN landing_rate END) AS avg_rate,
+                   MAX(CASE WHEN landing_rate <= -1 THEN landing_rate END) AS best_rate
             FROM flight_logs
             WHERE landing_rate IS NOT NULL {since}
             GROUP BY user_id

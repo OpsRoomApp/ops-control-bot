@@ -384,10 +384,13 @@ async def _send_milestone_ping(bot: commands.Bot, payload: dict[str, Any]) -> No
 
     personal_best = None
     if rate is not None:
-        # "best" = softest landing = highest (closest to zero) fpm value.
+        # "best" = softest real touchdown = highest (closest to zero) fpm
+        # value, but only genuine landings count (strictly negative, at
+        # least 1 fpm) so parked v/s junk never sets a personal best.
         cursor = await db.execute(
             "SELECT MAX(landing_rate) AS best FROM flight_logs "
-            "WHERE user_id = ? AND landing_rate IS NOT NULL AND id < (SELECT MAX(id) FROM flight_logs WHERE user_id = ?)",
+            "WHERE user_id = ? AND landing_rate IS NOT NULL AND landing_rate <= -1 "
+            "AND id < (SELECT MAX(id) FROM flight_logs WHERE user_id = ?)",
             (discord_id, discord_id),
         )
         row = await cursor.fetchone()
