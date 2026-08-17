@@ -472,12 +472,16 @@ class ReleasesCog(commands.Cog):
                     title = str(item.get("title") or "").strip()
                     if status in grouped and title:
                         grouped[status].append(title)
-                return {
-                    "current_sprint": str(body.get("current_sprint") or ""),
-                    "completed": grouped["completed"],
-                    "in_progress": grouped["in_progress"],
-                    "planned": grouped["planned"],
-                }
+                # Only trust the live roadmap once the admin panel has
+                # actually been populated; an empty panel would otherwise
+                # blank out the bundled snapshot.
+                if body.get("current_sprint") or grouped["planned"] or grouped["in_progress"] or grouped["completed"]:
+                    return {
+                        "current_sprint": str(body.get("current_sprint") or ""),
+                        "completed": grouped["completed"],
+                        "in_progress": grouped["in_progress"],
+                        "planned": grouped["planned"],
+                    }
         except Exception:
             logger.exception("Failed to load live roadmap; using bundled snapshot")
         return {}  # caller falls back to ROADMAP_DATA
