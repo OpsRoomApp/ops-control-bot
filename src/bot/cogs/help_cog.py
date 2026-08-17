@@ -109,6 +109,7 @@ class HelpCog(commands.Cog):
             ("/rules", "The house rules"),
             ("/support", "Open a support ticket"),
             ("/bug", "Report an OPS ROOM bug"),
+            ("/feedback", "Submit feedback or a feature request"),
             ("/status", "Bot health, version, latency, loaded modules"),
             ("/ping", "Latency check"),
             ("/profile", "Your user profile"),

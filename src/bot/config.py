@@ -105,6 +105,14 @@ class Config:
             "https://opsroom.live/api/public/releases",
         )
     )
+    # Website-primary roadmap (admin-panel managed). /roadmap reads this
+    # first and falls back to the bundled snapshot when the site is down.
+    opsroom_public_roadmap_api: str = field(
+        default_factory=lambda: _env_str(
+            "OPSROOM_PUBLIC_ROADMAP_API",
+            "https://opsroom.live/api/public/roadmap",
+        )
+    )
     # /changelog hides anything older than this ("reset" the history from a
     # chosen version onward). Empty string = no filter.
     changelog_min_version: str = field(
@@ -122,6 +130,16 @@ class Config:
     # How often the bot polls the public releases endpoint for new releases.
     release_poll_seconds: int = field(
         default_factory=lambda: _env_int("RELEASE_POLL_SECONDS", 30)
+    )
+    # Channel the bot posts roadmap updates to, as itself (no webhooks).
+    # 1538901155583889488 = roadmap channel.
+    discord_roadmap_channel_id: int = field(
+        default_factory=lambda: _env_int("DISCORD_ROADMAP_CHANNEL_ID", 1538901155583889488)
+    )
+    # Forum where feedback / feature requests land as threads.
+    # 1522234516922433661 = feedback and feature requests forum.
+    feedback_forum_channel_id: int = field(
+        default_factory=lambda: _env_int("FEEDBACK_FORUM_CHANNEL_ID", 1522234516922433661)
     )
 
     # -- Channel IDs --

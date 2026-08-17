@@ -61,6 +61,7 @@ Built with Python 3.12+, discord.py 2.x, Pillow, and aiosqlite. Designed for Doc
 | Command | Description |
 |---------|-------------|
 | `/bug` | Report a bug (modal, posts to bug reports channel, mentions Owner + Developer) |
+| `/feedback` | Submit feedback or a feature request (opens a public forum thread) |
 | `/support` | Open the support panel (persistent panel with ticket buttons) |
 
 ### Admin

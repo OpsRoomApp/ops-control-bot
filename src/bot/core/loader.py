@@ -40,6 +40,8 @@ _REQUIRED_COGS: list[str] = [
     "bot.cogs.roles_cog",
     "bot.cogs.verify",
     "bot.cogs.randomroute",
+    # v0.26 -- public feedback / feature requests forum
+    "bot.cogs.feedback",
     # v0.25.55 (B2) -- full moderation suite + automod
     "bot.cogs.moderation",
     # v0.25.55 (B3) -- VATSIM event reminders

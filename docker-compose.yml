@@ -39,6 +39,9 @@ services:
       # Pending action dispatcher
       - PENDING_ACTION_POLL_SECONDS=${PENDING_ACTION_POLL_SECONDS:-15}
       - PENDING_ACTION_MAX_ATTEMPTS=${PENDING_ACTION_MAX_ATTEMPTS:-3}
+      # v0.26: roadmap channel + feedback forum (defaults match the server)
+      - DISCORD_ROADMAP_CHANNEL_ID=${DISCORD_ROADMAP_CHANNEL_ID:-1538901155583889488}
+      - FEEDBACK_FORUM_CHANNEL_ID=${FEEDBACK_FORUM_CHANNEL_ID:-1522234516922433661}
 
   # -----------------------------------------------
   # Future: PostgreSQL

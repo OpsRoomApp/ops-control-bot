@@ -234,6 +234,8 @@ KNOWN_ACTION_TYPES: frozenset[str] = frozenset({
     "moderation_reverse",  # C2 -- appeal approval reverses ban/timeout
     "announce_dispatch", "beta_role_change", "ticket_state_change",
     "flight_event",  # community: takeoff/landing notification from the desktop app
+    "roadmap_update",  # v0.26: roadmap publish from the admin panel
+    "feedback_new",    # v0.26: feedback/feature-request forum thread
 })
 
 
@@ -256,6 +258,9 @@ async def _execute(bot: commands.Bot, action_type: str, payload: dict[str, Any])
         "moderation_reverse": _dispatch_moderation_reverse,
         # Community flight events (desktop app -> Discord)
         "flight_event": _dispatch_flight_event,
+        # v0.26: roadmap publish + feedback forum threads (admin panel / app)
+        "roadmap_update": _dispatch_roadmap,
+        "feedback_new": _dispatch_feedback_new,
         # Legacy aliases (processed for backwards compatibility)
         "announce_dispatch": _dispatch_announcement,
         "beta_role_change": _dispatch_legacy_beta,
@@ -318,6 +323,89 @@ async def _dispatch_announcement(bot: commands.Bot, payload: dict[str, Any]) -> 
         await db.commit()
 
     return result
+
+
+async def _dispatch_roadmap(bot: commands.Bot, payload: dict[str, Any]) -> dict[str, Any]:
+    """Post a roadmap update embed to the roadmap channel.
+
+    Payload: sprint, revision, planned / in_progress / completed (title
+    lists), optional channel_id. The channel falls back to
+    config.discord_roadmap_channel_id when not supplied.
+    """
+    sprint = str(payload.get("sprint") or "").strip()
+    revision = int(payload.get("revision") or 0)
+    planned = [str(x) for x in (payload.get("planned") or []) if str(x).strip()]
+    in_progress = [str(x) for x in (payload.get("in_progress") or []) if str(x).strip()]
+    completed = [str(x) for x in (payload.get("completed") or []) if str(x).strip()]
+
+    channel_id = int(payload.get("channel_id") or 0) or config.discord_roadmap_channel_id
+    if not channel_id:
+        raise ValueError("No roadmap channel configured")
+    channel = bot.get_channel(channel_id)
+    if not channel or not isinstance(channel, discord.TextChannel):
+        raise ValueError(f"roadmap channel not found: {channel_id}")
+
+    def _field(title_list: list[str]) -> str:
+        text = "\n".join(f"- {item}" for item in title_list) or "- None"
+        return text[:1024]
+
+    embed = discord.Embed(
+        title="OPS ROOM Roadmap Updated",
+        color=0x059669,
+        description=f"Current Sprint: {sprint or 'Unknown'}" + (f" · revision {revision}" if revision else ""),
+    )
+    embed.add_field(name="Completed", value=_field(completed), inline=False)
+    embed.add_field(name="In Progress", value=_field(in_progress), inline=False)
+    embed.add_field(name="Planned", value=_field(planned), inline=False)
+    embed.set_footer(text="Pushed from the OPS ROOM admin panel")
+
+    msg = await channel.send(embed=embed)
+    logger.info("Roadmap update posted to #%s (revision %s)", channel.name, revision)
+    return {"message_id": msg.id, "channel_id": channel_id, "revision": revision}
+
+
+async def _dispatch_feedback_new(bot: commands.Bot, payload: dict[str, Any]) -> dict[str, Any]:
+    """Open a feedback/feature-request forum thread from the admin/app pipeline.
+
+    Payload: feedback_id, kind, title, description, optional contact and
+    forum_channel_id. The forum falls back to config.feedback_forum_channel_id.
+    """
+    feedback_id = str(payload.get("feedback_id") or "")
+    kind = str(payload.get("kind") or "feedback").strip().lower()
+    title = str(payload.get("title") or "Untitled").strip()
+    description = str(payload.get("description") or "").strip()
+    contact = str(payload.get("contact") or "").strip()
+
+    forum_id = int(payload.get("forum_channel_id") or 0) or config.feedback_forum_channel_id
+    if not forum_id:
+        raise ValueError("No feedback forum configured")
+    forum = bot.get_channel(forum_id)
+    if not forum or not isinstance(forum, discord.ForumChannel):
+        raise ValueError(f"feedback forum not found: {forum_id}")
+
+    kind_label = {
+        "feedback": "Feedback",
+        "feature_request": "Feature Request",
+        "bug": "Bug Report",
+    }.get(kind, "Feedback")
+    thread_name = f"[{kind_label}] {title}"[:100]
+
+    embed = discord.Embed(title=title, color=0x3B82F6, timestamp=discord.utils.utcnow())
+    embed.add_field(name="Type", value=kind_label, inline=True)
+    embed.add_field(name="Submitted", value="via OPS ROOM", inline=True)
+    embed.add_field(name="Details", value=(description or "-")[:1024], inline=False)
+    if contact:
+        embed.add_field(name="Contact", value=contact[:100], inline=False)
+    if feedback_id:
+        embed.set_footer(text=f"{feedback_id} · feedback is reviewed and routed from the admin panel")
+
+    thread = await forum.create_thread(
+        name=thread_name,
+        content=f"New **{kind_label.lower()}** submitted.",
+        embed=embed,
+    )
+    logger.info("Feedback thread opened in %s: %s", forum.name, thread_name)
+    return {"thread_id": getattr(thread, "id", None), "forum_id": forum_id, "feedback_id": feedback_id}
 
 
 async def _dispatch_beta_role(

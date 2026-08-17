@@ -488,3 +488,21 @@ async def fetch_opsroom_public_releases() -> dict[str, Any] | None:
     except Exception:
         logger.exception("OPS ROOM public releases API request failed")
         raise
+
+
+async def fetch_opsroom_public_roadmap() -> dict[str, Any] | None:
+    """Fetch the public roadmap from opsroom.live (website-primary).
+
+    Returns the raw JSON body: ``{"ok": true, "current_sprint": "...",
+    "revision": N, "items": [{id, title, status, sprint, sort_order}, ...]}``.
+    """
+    from bot.config import config
+
+    try:
+        session = await _get_session()
+        async with session.get(config.opsroom_public_roadmap_api) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+    except Exception:
+        logger.exception("OPS ROOM public roadmap API request failed")
+        raise

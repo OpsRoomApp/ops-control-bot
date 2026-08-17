@@ -96,29 +96,39 @@ def should_announce(last_announced: str, current_version: str) -> bool:
         return False
     return _version_key(current_version) > _version_key(last_announced)
 
+# Offline fallback snapshot (kept in sync with the admin-panel roadmap at
+# opsroom.live/api/public/roadmap, which /roadmap reads first).
 ROADMAP_DATA = {
-    "current_sprint": "v0.25 Public Beta",
+    "current_sprint": "v0.26 Development",
     "completed": [
-        "Discord Bot Operations Interface",
-        "Welcome Image Generation",
-        "NOTAM Management System",
-        "Flight Operations (VATSIM, OpenSky, SimBrief)",
-        "Weather / METAR Commands",
-        "ATIS Support",
-        "Bug Reporting System",
-        "Support Ticket System",
-        "User Profile System",
+        "In-sim tablet panel for MSFS 2020 and 2024",
+        "Native EFB app inside the MSFS 2024 cockpit tablet",
+        "Automatic updater with one-click installer",
+        "In-app bug reports with diagnostics ZIP",
+        "Black Box recorder with in-sim replay and landing analysis",
+        "First-party performance calculator for the supported fleet",
+        "Live OFP dispatch with electronic crew sign-off",
+        "In-sim NOTAM closure markers for 2020 and 2024",
+        "Community map, leaderboard and Discord integration",
+        "CPDLC over Hoppie, GSX ground automation, RAAS and announcements",
     ],
     "in_progress": [
-        "OPS ROOM Desktop Telemetry Integration",
-        "Flight Logging and Analytics",
-        "Admin Web Panel v2",
+        "Live Map aircraft follow (click an aircraft to keep it centered)",
+        "Roadmap channel and feedback forum",
+        "Black Box replay robustness (freeze and hang fixes)",
+        "GSX passenger-door hold-open for cabin cleaning",
+        "ATIS at top of descent in the briefing DM",
+        "Leaderboard sorting by flight hours",
+        "UI polish pass (grid sizing, fonts, contrast, dark scrollbars)",
     ],
     "planned": [
-        "MSFS 2024 Full Compatibility",
-        "Multi-User Operations Sync",
-        "Live Flight Tracking Map",
-        "Community Events System",
+        "Personal flight tracker and cloud logbook",
+        "One-tap landing report share card",
+        "Fleet hangar with per-airframe telemetry",
+        "Fleet wear and maintenance tied to the economy",
+        "Voice copilot checklists",
+        "Replay to shareable video clip",
+        "Key-moment auto-capture timeline",
     ],
 }
 
@@ -425,31 +435,52 @@ class ReleasesCog(commands.Cog):
         description="OPS ROOM development roadmap.",
     )
     async def roadmap(self, interaction: discord.Interaction) -> None:
-        """Display the OPS ROOM roadmap."""
+        """Display the OPS ROOM roadmap (live from opsroom.live, fallback snapshot)."""
+        await interaction.response.defer()
+
+        data = await self._load_roadmap()
+        sprint = data.get("current_sprint") or ROADMAP_DATA["current_sprint"]
+        completed = data.get("completed") or ROADMAP_DATA["completed"]
+        in_progress = data.get("in_progress") or ROADMAP_DATA["in_progress"]
+        planned = data.get("planned") or ROADMAP_DATA["planned"]
+
+        def _field(title_list: list[str]) -> str:
+            text = "\n".join(f"- {item}" for item in title_list) or "- None yet"
+            return text[:1024]
+
         embed = discord.Embed(
             title="OPS ROOM Development Roadmap",
             color=0x059669,
-            description=f"Current Sprint: {ROADMAP_DATA['current_sprint']}",
+            description=f"Current Sprint: {sprint}",
         )
+        embed.add_field(name="Completed", value=_field(completed), inline=False)
+        embed.add_field(name="In Progress", value=_field(in_progress), inline=False)
+        embed.add_field(name="Planned", value=_field(planned), inline=False)
+        embed.set_footer(text="OPS ROOM Development · opsroom.live/api/public/roadmap")
+        await interaction.followup.send(embed=embed)
 
-        embed.add_field(
-            name="Completed",
-            value="\n".join(f"- {item}" for item in ROADMAP_DATA["completed"]),
-            inline=False,
-        )
-        embed.add_field(
-            name="In Progress",
-            value="\n".join(f"- {item}" for item in ROADMAP_DATA["in_progress"]),
-            inline=False,
-        )
-        embed.add_field(
-            name="Planned",
-            value="\n".join(f"- {item}" for item in ROADMAP_DATA["planned"]),
-            inline=False,
-        )
+    async def _load_roadmap(self) -> dict[str, Any]:
+        """Fetch the live roadmap from opsroom.live; fall back to the snapshot."""
+        try:
+            from bot.api import fetch_opsroom_public_roadmap
 
-        embed.set_footer(text="OPS ROOM Development")
-        await interaction.response.send_message(embed=embed)
+            body = await fetch_opsroom_public_roadmap()
+            if body and body.get("ok"):
+                grouped: dict[str, list[str]] = {"planned": [], "in_progress": [], "completed": []}
+                for item in body.get("items") or []:
+                    status = str(item.get("status") or "planned").lower()
+                    title = str(item.get("title") or "").strip()
+                    if status in grouped and title:
+                        grouped[status].append(title)
+                return {
+                    "current_sprint": str(body.get("current_sprint") or ""),
+                    "completed": grouped["completed"],
+                    "in_progress": grouped["in_progress"],
+                    "planned": grouped["planned"],
+                }
+        except Exception:
+            logger.exception("Failed to load live roadmap; using bundled snapshot")
+        return {}  # caller falls back to ROADMAP_DATA
 
 
 async def setup(bot: commands.Bot) -> None:
