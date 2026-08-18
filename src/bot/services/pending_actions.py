@@ -354,9 +354,11 @@ async def _dispatch_roadmap(bot: commands.Bot, payload: dict[str, Any]) -> dict[
         color=0x059669,
         description=f"Current Sprint: {sprint or 'Unknown'}" + (f" · revision {revision}" if revision else ""),
     )
-    embed.add_field(name="Completed", value=_field(completed), inline=False)
+    # Sections are sent In Progress -> Planned -> Completed (active work
+    # first, finished work last).
     embed.add_field(name="In Progress", value=_field(in_progress), inline=False)
     embed.add_field(name="Planned", value=_field(planned), inline=False)
+    embed.add_field(name="Completed", value=_field(completed), inline=False)
     embed.set_footer(text="Pushed from the OPS ROOM admin panel")
 
     msg = await channel.send(embed=embed)

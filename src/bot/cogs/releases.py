@@ -111,15 +111,16 @@ ROADMAP_DATA = {
         "In-sim NOTAM closure markers for 2020 and 2024",
         "Community map, leaderboard and Discord integration",
         "CPDLC over Hoppie, GSX ground automation, RAAS and announcements",
+        "Roadmap channel and feedback forum",
+        "ATIS at top of descent in the briefing DM",
     ],
     "in_progress": [
         "Live Map aircraft follow (click an aircraft to keep it centered)",
-        "Roadmap channel and feedback forum",
         "Black Box replay robustness (freeze and hang fixes)",
         "GSX passenger-door hold-open for cabin cleaning",
-        "ATIS at top of descent in the briefing DM",
         "Leaderboard sorting by flight hours",
         "UI polish pass (grid sizing, fonts, contrast, dark scrollbars)",
+        "Diversion detection and diversion report",
     ],
     "planned": [
         "Personal flight tracker and cloud logbook",
@@ -453,9 +454,11 @@ class ReleasesCog(commands.Cog):
             color=0x059669,
             description=f"Current Sprint: {sprint}",
         )
-        embed.add_field(name="Completed", value=_field(completed), inline=False)
+        # Sections are sent In Progress -> Planned -> Completed (active work
+        # first, finished work last).
         embed.add_field(name="In Progress", value=_field(in_progress), inline=False)
         embed.add_field(name="Planned", value=_field(planned), inline=False)
+        embed.add_field(name="Completed", value=_field(completed), inline=False)
         embed.set_footer(text="OPS ROOM Development · opsroom.live/api/public/roadmap")
         await interaction.followup.send(embed=embed)
 
